@@ -1,0 +1,32 @@
+
+    <resources>
+        <string name="app_name">Heart Rate Monitor</string>
+        <string name="error_ble_not_supported">BLE no soportado</string>
+        <string name="error_bluetooth_not_available">Bluetooth no disponible</string>
+        <string name="error_permissions_required">Se requieren permisos para continuar</string>
+        <string name="error_bluetooth_disabled">Bluetooth no está activado</string>
+        <string name="error_scanner_not_available">Escáner no disponible</string>
+        <string name="error_scan_failed">Error al escanear: %1$d</string>
+        <string name="error_permissions">Error de permisos: %1$s</string>
+        <string name="error_stop_scan">Error al detener escaneo: %1$s</string>
+        <string name="error_connecting">Error al conectar: %1$s</string>
+        <string name="status_scanning">Buscando dispositivos...</string>
+        <string name="status_connecting">Conectando a dispositivo...</string>
+        <string name="status_discovering_services">Descubriendo servicios...</string>
+        <string name="status_ready">Listo para recibir datos</string>
+        <string name="status_receiving_data">Recibiendo datos</string>
+        <string name="heart_rate">Frecuencia cardíaca: %1$d BPM</string>
+
+
+
+        <string name="status_disconnected">Dispositivo desconectado</string>
+
+
+
+        <string name="error_characteristic_not_found">Característica de frecuencia cardíaca no encontrada</string>
+        <string name="error_services_discovery_failed">Error al descubrir servicios: %1$d</string>
+
+
+
+    </resources>
+

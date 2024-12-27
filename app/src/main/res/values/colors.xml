@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="zone1">#B0E57C</color> <!-- Verde claro -->
+    <color name="zone2">#F7DC6F</color> <!-- Amarillo -->
+    <color name="zone3">#FF8C00</color> <!-- Naranja -->
+    <color name="zone4">#FF6347</color> <!-- Rojo claro -->
+    <color name="zone5">#FF0000</color> <!-- Rojo intenso -->
+    <color name="inactiveZone">#D3D3D3</color> <!-- Gris para zonas inactivas -->
+    <color name="activeZone">#FF0000</color> <!-- Rojo para la zona activa -->
+
+
+</resources>

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "399643368510",
+    "project_id": "heartrateapp-bb685",
+    "storage_bucket": "heartrateapp-bb685.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:399643368510:android:0116875e5bf53bcf52056f",
+        "android_client_info": {
+          "package_name": "com.heartratemonitor.heartratemonitor"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBSheb6ae_PCzXxuw0qAdp0dDMxXlypsDI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

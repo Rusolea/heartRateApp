@@ -35,6 +35,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+
+
+//import com.google.firebase.analytics.FirebaseAnalytics;
+
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
     private static final int PERMISSION_REQUEST_CODE = 123;
@@ -71,6 +75,7 @@ public class MainActivity extends AppCompatActivity {
     private int heartRateReadings;
     private final int[] zoneThresholds = new int[5];
     private boolean isScanning = false;
+//    private FirebaseAnalytics firebaseAnalytics;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -295,6 +300,35 @@ public class MainActivity extends AppCompatActivity {
         // TODO: Implement actual data saving
         Log.d(TAG, String.format("Training saved - Name: %s, Avg HR: %.1f, Duration: %d sec",
                 name, averageHR, elapsedTime / 1000));
+
+        // Obtén una instancia de la base de datos
+        com.google.firebase.database.FirebaseDatabase database = com.google.firebase.database.FirebaseDatabase.getInstance();
+        // Obtén una referencia a la ruta donde guardarás los datos
+        com.google.firebase.database.DatabaseReference trainingRef = database.getReference("entrenamientos"); // "entrenamientos" es el nombre de la tabla
+
+        // Crea un objeto para guardar los datos
+        TrainingData trainingData = new TrainingData(name, comment, averageHR, elapsedTime / 1000);
+
+        // Guarda los datos en Firebase
+        trainingRef.push().setValue(trainingData); // push() genera una clave única para cada entrenamiento
+    }
+
+    public class TrainingData {
+        public String name;
+        public String comment;
+        public double averageHR;
+        public long duration;
+
+        public TrainingData() {
+            // Constructor vacío requerido por Firebase
+        }
+
+        public TrainingData(String name, String comment, double averageHR, long duration) {
+            this.name = name;
+            this.comment = comment;
+            this.averageHR = averageHR;
+            this.duration = duration;
+        }
     }
 
     private void resetTrainingData() {

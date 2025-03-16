@@ -562,4 +562,12 @@ public class BluetoothHandler {
             }
         }
     }
+
+    /**
+     * Comprueba si hay un dispositivo conectado actualmente
+     * @return true si hay un dispositivo conectado, false en caso contrario
+     */
+    public boolean isDeviceConnected() {
+        return bluetoothGatt != null;
+    }
 }

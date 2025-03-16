@@ -3,6 +3,21 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
     
     <item
+        android:id="@+id/action_search_device"
+        android:title="@string/search_device"
+        android:icon="@drawable/ic_bluetooth_search"
+        android:orderInCategory="50"
+        app:showAsAction="ifRoom" />
+    
+    <item
+        android:id="@+id/action_disconnect"
+        android:title="@string/disconnect_device"
+        android:icon="@drawable/ic_bluetooth_disconnect"
+        android:orderInCategory="75"
+        android:visible="false"
+        app:showAsAction="ifRoom" />
+    
+    <item
         android:id="@+id/action_history"
         android:title="@string/nav_history"
         android:orderInCategory="100"
@@ -18,5 +33,11 @@
         android:id="@+id/action_settings"
         android:title="@string/nav_settings"
         android:orderInCategory="300"
+        app:showAsAction="never" />
+    
+    <item
+        android:id="@+id/action_floating_view"
+        android:title="@string/floating_view_enable"
+        android:orderInCategory="400"
         app:showAsAction="never" />
 </menu> 

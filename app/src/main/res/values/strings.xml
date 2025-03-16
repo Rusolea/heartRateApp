@@ -116,8 +116,8 @@
     <string name="dialog_session_active_title">Sesión activa</string>
     <string name="dialog_session_active_message">Tienes una sesión de monitoreo activa. Para continuar, debes detener la sesión actual.</string>
     <string name="dialog_stop_session">Detener sesión</string>
-    <string name="fab_start_monitoring">Iniciar monitoreo</string>
-    <string name="fab_stop_monitoring">Detener monitoreo</string>
+    <string name="fab_start_monitoring">Iniciar medición</string>
+    <string name="fab_stop_monitoring">Detener medición</string>
     <string name="bluetooth_enabled">Bluetooth activado</string>
     <string name="bluetooth_disabled">Bluetooth desactivado</string>
     <string name="connected_to">Conectado a %1$s</string>
@@ -140,5 +140,29 @@
     <string name="zone4_description">Zona 4: Intensidad alta. Mejora la velocidad y la resistencia anaeróbica.</string>
     <string name="zone5_description">Zona 5: Intensidad máxima. Aumenta el rendimiento de sprint y la potencia.</string>
     <string name="no_zone_description">Zona no detectada. Verifique la conexión con el dispositivo.</string>
+    <string name="floating_view_enable">Activar vista flotante</string>
+    <string name="floating_view_disable">Desactivar vista flotante</string>
+    <string name="floating_view_enabled">Vista flotante activada</string>
+    <string name="floating_view_disabled">Vista flotante desactivada</string>
+    <string name="overlay_permission_required">Permiso de superposición requerido</string>
+    <string name="overlay_permission_message">Esta función permite mostrar los datos de frecuencia cardíaca mientras usas otras aplicaciones</string>
+    <string name="grant_permission">Otorgar Permiso</string>
+    <string name="monitoring_required">Primero debe iniciar el monitoreo de frecuencia cardíaca</string>
+    <string name="service_notification_title">Monitoreo de frecuencia cardíaca</string>
+    <string name="service_notification_connecting">Conectando...</string>
+    <string name="service_notification_monitoring">Monitoreo activo</string>
+    <string name="service_notification_waiting">Esperando datos...</string>
+    <string name="service_stop">Detener</string>
+    <string name="search_device">Buscar dispositivo</string>
+    <string name="disconnect_device">Desconectar</string>
+    <string name="start_measurement">Iniciar medición</string>
+    <string name="stop_measurement">Detener medición</string>
+    <string name="device_connected_start_measurement">Dispositivo conectado. Pulse el botón central para iniciar la medición.</string>
+    <string name="searching_devices">Buscando dispositivos...</string>
+    <string name="no_device_connected">No hay dispositivo conectado</string>
+    <string name="measurement_in_progress">Medición en curso</string>
+    <string name="measuring">Midiendo...</string>
+    <string name="measurement_stopped">Medición detenida</string>
+    <string name="device_disconnected_message">Dispositivo desconectado</string>
 </resources>
 

@@ -4,8 +4,10 @@ import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.provider.Settings;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -31,6 +33,8 @@ import com.heartratemonitor.heartratemonitor.fragments.HRVFragment;
 import com.heartratemonitor.heartratemonitor.fragments.MonitorFragment;
 import com.heartratemonitor.heartratemonitor.fragments.SettingsFragment;
 import com.heartratemonitor.heartratemonitor.permissions.PermissionHandler;
+import com.heartratemonitor.heartratemonitor.services.FloatingViewService;
+import com.heartratemonitor.heartratemonitor.services.HeartRateService;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -51,6 +55,7 @@ public class MainActivity extends AppCompatActivity implements
 
     private static final String TAG = "MainActivity";
     private static final int REQUEST_ENABLE_BT = 1;
+    private static final int REQUEST_OVERLAY_PERMISSION = 2;
     
     private PermissionHandler permissionHandler;
     private BluetoothHandler bluetoothHandler;
@@ -63,6 +68,9 @@ public class MainActivity extends AppCompatActivity implements
     private long currentSessionId = -1;
     private ArrayList<Integer> rrIntervals = new ArrayList<>();
     private HRVAnalyzer hrvAnalyzer;
+    
+    // Variable para controlar el estado del servicio flotante
+    private boolean isFloatingServiceRunning = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -127,6 +135,20 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.main_menu, menu);
+        
+        // Añadir opción para activar/desactivar vista flotante
+        MenuItem floatingItem = menu.findItem(R.id.action_floating_view);
+        floatingItem.setTitle(isFloatingServiceRunning ? R.string.floating_view_disable : R.string.floating_view_enable);
+        
+        // Configurar visibilidad de botones según el estado de la conexión
+        MenuItem searchItem = menu.findItem(R.id.action_search_device);
+        MenuItem disconnectItem = menu.findItem(R.id.action_disconnect);
+        
+        // Si hay un dispositivo conectado, mostrar botón de desconectar y ocultar buscar
+        boolean isDeviceConnected = bluetoothHandler != null && bluetoothHandler.isDeviceConnected();
+        searchItem.setVisible(!isDeviceConnected);
+        disconnectItem.setVisible(isDeviceConnected);
+        
         return true;
     }
     
@@ -134,7 +156,13 @@ public class MainActivity extends AppCompatActivity implements
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
         int id = item.getItemId();
         
-        if (id == R.id.action_history) {
+        if (id == R.id.action_search_device) {
+            startDeviceSearch();
+            return true;
+        } else if (id == R.id.action_disconnect) {
+            disconnectDevice();
+            return true;
+        } else if (id == R.id.action_history) {
             showFragment(new HistoryFragment(), "history");
             return true;
         } else if (id == R.id.action_hrv) {
@@ -143,6 +171,9 @@ public class MainActivity extends AppCompatActivity implements
             return true;
         } else if (id == R.id.action_settings) {
             showFragment(new SettingsFragment(), "settings");
+            return true;
+        } else if (id == R.id.action_floating_view) {
+            toggleFloatingView();
             return true;
         }
         
@@ -174,6 +205,12 @@ public class MainActivity extends AppCompatActivity implements
             } else {
                 // Bluetooth no activado
                 Toast.makeText(this, R.string.error_bluetooth_disabled, Toast.LENGTH_SHORT).show();
+            }
+        } else if (requestCode == REQUEST_OVERLAY_PERMISSION) {
+            if (Settings.canDrawOverlays(this)) {
+                startFloatingViewService();
+            } else {
+                Toast.makeText(this, "Permiso de superposición denegado", Toast.LENGTH_SHORT).show();
             }
         }
     }
@@ -268,6 +305,9 @@ public class MainActivity extends AppCompatActivity implements
                 .setItems(deviceNames, (dialog, which) -> {
                     // Conectar con el dispositivo seleccionado
                     bluetoothHandler.connectToDevice(devices.get(which).getAddress());
+                    
+                    // Iniciar el servicio en primer plano
+                    startHeartRateService(devices.get(which).getAddress());
                 })
                 .setNegativeButton(R.string.dialog_cancel, (dialog, which) -> {
                     stopMonitoring();
@@ -278,8 +318,11 @@ public class MainActivity extends AppCompatActivity implements
     public void onDeviceConnected(String deviceName) {
         Toast.makeText(this, getString(R.string.connected_to, deviceName), Toast.LENGTH_SHORT).show();
         if (monitorFragment != null && monitorFragment.isAdded()) {
-            monitorFragment.updateConnectionStatus(getString(R.string.connected_to, deviceName));
+            monitorFragment.updateConnectionStatus(getString(R.string.device_connected_start_measurement));
         }
+        
+        // Actualizar opciones del menú para mostrar botón de desconectar
+        invalidateOptionsMenu();
     }
     
     public void onDeviceDisconnected() {
@@ -436,21 +479,11 @@ public class MainActivity extends AppCompatActivity implements
     }
     
     private void startMonitoring() {
-        // Verificar permisos Bluetooth
-        if (!permissionHandler.checkBluetoothPermissions()) {
-            permissionHandler.requestBluetoothPermissions();
+        // Verificar si hay un dispositivo conectado
+        if (bluetoothHandler != null && !bluetoothHandler.isDeviceConnected()) {
+            Toast.makeText(this, R.string.no_device_connected, Toast.LENGTH_SHORT).show();
             return;
         }
-        
-        // Verificar si Bluetooth está habilitado
-        if (!bluetoothHandler.isBluetoothEnabled()) {
-            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-            startActivityForResult(enableBtIntent, BluetoothHandler.REQUEST_ENABLE_BT);
-            return;
-        }
-        
-        // Iniciar escaneo de dispositivos
-        bluetoothHandler.startScan();
         
         // Crear nueva sesión
         currentSessionId = createNewSession();
@@ -462,13 +495,13 @@ public class MainActivity extends AppCompatActivity implements
         
         if (monitorFragment != null && monitorFragment.isAdded()) {
             monitorFragment.updateMonitoringState(true);
+            monitorFragment.updateConnectionStatus(getString(R.string.measuring));
         }
+        
+        Toast.makeText(this, R.string.measurement_in_progress, Toast.LENGTH_SHORT).show();
     }
     
     private void stopMonitoring() {
-        // Detener monitoreo de dispositivo
-        bluetoothHandler.disconnect();
-        
         // Finalizar la sesión en la base de datos
         if (currentSessionId != -1) {
             finalizeSession(currentSessionId);
@@ -480,6 +513,15 @@ public class MainActivity extends AppCompatActivity implements
         
         if (monitorFragment != null && monitorFragment.isAdded()) {
             monitorFragment.updateMonitoringState(false);
+            monitorFragment.updateConnectionStatus(getString(R.string.measurement_stopped));
+        }
+        
+        Toast.makeText(this, R.string.measurement_stopped, Toast.LENGTH_SHORT).show();
+        
+        // Detener servicios si están activos
+        stopHeartRateService();
+        if (isFloatingServiceRunning) {
+            stopFloatingViewService();
         }
     }
     
@@ -675,5 +717,127 @@ public class MainActivity extends AppCompatActivity implements
         
         // Obtener la edad del usuario (por defecto 30 si no está configurada)
         return prefs.getInt("user_age", 30);
+    }
+
+    // Métodos para el manejo de la vista flotante y servicio en primer plano
+    
+    private void toggleFloatingView() {
+        if (isFloatingServiceRunning) {
+            stopFloatingViewService();
+        } else {
+            if (checkOverlayPermission()) {
+                startFloatingViewService();
+            }
+        }
+    }
+    
+    private boolean checkOverlayPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            // Mostrar diálogo explicando por qué se necesita el permiso
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.overlay_permission_required)
+                    .setMessage(R.string.overlay_permission_message)
+                    .setPositiveButton(R.string.grant_permission, (dialog, which) -> {
+                        Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:" + getPackageName()));
+                        startActivityForResult(intent, REQUEST_OVERLAY_PERMISSION);
+                    })
+                    .setNegativeButton(R.string.dialog_cancel, null)
+                    .show();
+            return false;
+        }
+        return true;
+    }
+    
+    private void startFloatingViewService() {
+        if (!isMonitoring) {
+            Toast.makeText(this, R.string.monitoring_required, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        // Iniciar el servicio de vista flotante
+        Intent intent = new Intent(this, FloatingViewService.class);
+        startService(intent);
+        isFloatingServiceRunning = true;
+        
+        Toast.makeText(this, R.string.floating_view_enabled, Toast.LENGTH_SHORT).show();
+    }
+    
+    private void stopFloatingViewService() {
+        Intent intent = new Intent(this, FloatingViewService.class);
+        intent.putExtra("stop_service", true);
+        startService(intent);
+        isFloatingServiceRunning = false;
+        
+        Toast.makeText(this, R.string.floating_view_disabled, Toast.LENGTH_SHORT).show();
+    }
+    
+    private void startHeartRateService(String deviceAddress) {
+        // Iniciar el servicio en primer plano para monitorear la frecuencia cardíaca
+        Intent intent = new Intent(this, HeartRateService.class);
+        intent.putExtra("deviceAddress", deviceAddress);
+        intent.putExtra("maxHeartRate", getUserMaxHeartRate());
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent);
+        } else {
+            startService(intent);
+        }
+    }
+    
+    private void stopHeartRateService() {
+        Intent intent = new Intent(this, HeartRateService.class);
+        intent.setAction("com.heartratemonitor.heartratemonitor.STOP_SERVICE");
+        startService(intent);
+    }
+    
+    private int getUserMaxHeartRate() {
+        // Obtener la frecuencia cardíaca máxima del usuario
+        return 220 - getUserAgeFromPreferences();
+    }
+
+    // Nuevo método para iniciar la búsqueda de dispositivos
+    private void startDeviceSearch() {
+        // Verificar permisos Bluetooth
+        if (!permissionHandler.checkBluetoothPermissions()) {
+            permissionHandler.requestBluetoothPermissions();
+            return;
+        }
+        
+        // Verificar si Bluetooth está habilitado
+        if (!bluetoothHandler.isBluetoothEnabled()) {
+            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            startActivityForResult(enableBtIntent, BluetoothHandler.REQUEST_ENABLE_BT);
+            return;
+        }
+        
+        // Iniciar escaneo de dispositivos
+        bluetoothHandler.startScan();
+        
+        // Actualizar UI para mostrar que estamos buscando
+        if (monitorFragment != null && monitorFragment.isAdded()) {
+            monitorFragment.updateConnectionStatus(getString(R.string.searching_devices));
+        }
+    }
+    
+    // Nuevo método para desconectar el dispositivo
+    private void disconnectDevice() {
+        // Detener monitoreo si está activo
+        if (isMonitoring) {
+            stopMonitoring();
+        } else {
+            // Solo desconectar el dispositivo
+            bluetoothHandler.disconnect();
+            
+            // Actualizar la UI
+            if (monitorFragment != null && monitorFragment.isAdded()) {
+                monitorFragment.updateConnectionStatus(getString(R.string.device_disconnected_message));
+            }
+            
+            Toast.makeText(this, R.string.device_disconnected_message, Toast.LENGTH_SHORT).show();
+        }
+        
+        // Ocultar el botón de desconexión
+        invalidateOptionsMenu();
     }
 }

@@ -1,589 +1,659 @@
 package com.heartratemonitor.heartratemonitor;
 
-import android.Manifest;
+import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothGatt;
-import android.bluetooth.BluetoothGattCallback;
-import android.bluetooth.BluetoothGattCharacteristic;
-import android.bluetooth.BluetoothGattDescriptor;
-import android.bluetooth.BluetoothManager;
-import android.bluetooth.le.BluetoothLeScanner;
-import android.bluetooth.le.ScanCallback;
-import android.bluetooth.le.ScanResult;
-import android.content.Context;
-import android.content.pm.PackageManager;
-import android.os.Build;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
-import android.os.ParcelUuid;
-import android.util.Log;
-import android.view.Gravity;
-import android.widget.EditText;
-import android.widget.ImageButton;
-import android.widget.LinearLayout;
-import android.widget.TextView;
-import android.widget.Toast;
+import android.os.Environment;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
+import androidx.appcompat.widget.Toolbar;
+import androidx.core.content.FileProvider;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentManager;
+import androidx.fragment.app.FragmentTransaction;
 
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.heartratemonitor.heartratemonitor.bluetooth.BluetoothHandler;
+import com.heartratemonitor.heartratemonitor.bluetooth.BluetoothListener;
+import com.heartratemonitor.heartratemonitor.database.DatabaseHelper;
+import com.heartratemonitor.heartratemonitor.models.HeartRateData;
+import com.heartratemonitor.heartratemonitor.utils.HRVAnalyzer;
+import com.heartratemonitor.heartratemonitor.models.WorkoutSession;
+import com.heartratemonitor.heartratemonitor.fragments.HistoryFragment;
+import com.heartratemonitor.heartratemonitor.fragments.HRVFragment;
+import com.heartratemonitor.heartratemonitor.fragments.MonitorFragment;
+import com.heartratemonitor.heartratemonitor.fragments.SettingsFragment;
+import com.heartratemonitor.heartratemonitor.permissions.PermissionHandler;
+
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
-import java.util.UUID;
+import java.util.Locale;
 
+public class MainActivity extends AppCompatActivity implements 
+        BluetoothListener, 
+        PermissionHandler.PermissionListener,
+        MonitorFragment.MonitorFragmentListener,
+        HistoryFragment.HistoryFragmentListener,
+        HRVFragment.HRVFragmentListener,
+        SettingsFragment.SettingsFragmentListener {
 
-
-//import com.google.firebase.analytics.FirebaseAnalytics;
-
-public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
-    private static final int PERMISSION_REQUEST_CODE = 123;
-
-    // Bluetooth related fields
-    private BluetoothAdapter bluetoothAdapter;
-    private BluetoothLeScanner bluetoothLeScanner;
-    private BluetoothGatt bluetoothGatt;
-    private final UUID HEART_RATE_SERVICE_UUID = UUID.fromString("0000180D-0000-1000-8000-00805f9b34fb");
-    private final UUID HEART_RATE_CHARACTERISTIC_UUID = UUID.fromString("00002A37-0000-1000-8000-00805f9b34fb");
-    private final UUID CLIENT_CHARACTERISTIC_CONFIG_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
-
-    // UI Components
-    private TextView heartRateTextView;
-    private TextView statusTextView;
-    private TextView timerTextView;
-    private LinearLayout zonesContainer;
-    private EditText trainingName;
-    private EditText trainingComment;
-    private ImageButton btnStart;
-    private ImageButton btnPause;
-    private ImageButton btnStop;
-
-    // Training state and data
-    private enum TrainingState {
-        RUNNING,
-        PAUSED,
-        STOPPED
-    }
-    private TrainingState trainingState = TrainingState.STOPPED;
-    private long startTime;
-    private long elapsedTime;
-    private int totalHeartRate;
-    private int heartRateReadings;
-    private final int[] zoneThresholds = new int[5];
-    private boolean isScanning = false;
-//    private FirebaseAnalytics firebaseAnalytics;
+    private static final int REQUEST_ENABLE_BT = 1;
+    
+    private PermissionHandler permissionHandler;
+    private BluetoothHandler bluetoothHandler;
+    private DatabaseHelper dbHelper;
+    
+    private FloatingActionButton fab;
+    private MonitorFragment monitorFragment;
+    
+    private boolean isMonitoring = false;
+    private long currentSessionId = -1;
+    private ArrayList<Integer> rrIntervals = new ArrayList<>();
+    private HRVAnalyzer hrvAnalyzer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
-        if (!initializeViews() || !setupBluetooth()) {
-            return;
+        
+        // Configurar la toolbar
+        Toolbar toolbar = findViewById(R.id.toolbar);
+        if (toolbar != null) {
+            setSupportActionBar(toolbar);
         }
-
-        setupTrainingControls();
-        setupHeartRateZones();
-        checkPermissions();
-    }
-
-    private boolean initializeViews() {
-        heartRateTextView = findViewById(R.id.heartRateTextView);
-        statusTextView = findViewById(R.id.statusTextView);
-        timerTextView = findViewById(R.id.timerTextView);
-        zonesContainer = findViewById(R.id.zonesContainer);
-        trainingName = findViewById(R.id.trainingName);
-        trainingComment = findViewById(R.id.trainingComment);
-        btnStart = findViewById(R.id.btnStart);
-        btnPause = findViewById(R.id.btnPause);
-        btnStop = findViewById(R.id.btnStop);
-
-        if (anyViewIsNull()) {
-            Log.e(TAG, "One or more views were not found in the layout");
-            Toast.makeText(this, "Error loading interface", Toast.LENGTH_LONG).show();
-            finish();
-            return false;
-        }
-
-        return true;
-    }
-
-    private boolean anyViewIsNull() {
-        return heartRateTextView == null || statusTextView == null || timerTextView == null ||
-                zonesContainer == null || trainingName == null || trainingComment == null ||
-                btnStart == null || btnPause == null || btnStop == null;
-    }
-
-    private boolean setupBluetooth() {
-        BluetoothManager bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
-        if (bluetoothManager == null) {
-            Toast.makeText(this, "Bluetooth not supported", Toast.LENGTH_SHORT).show();
-            finish();
-            return false;
-        }
-
-        bluetoothAdapter = bluetoothManager.getAdapter();
-        if (bluetoothAdapter == null) {
-            Toast.makeText(this, "Bluetooth not available", Toast.LENGTH_SHORT).show();
-            finish();
-            return false;
-        }
-
-        if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
-            Toast.makeText(this, "BLE not supported", Toast.LENGTH_SHORT).show();
-            finish();
-            return false;
-        }
-
-        return true;
-    }
-
-    private void setupTrainingControls() {
-        btnStart.setOnClickListener(v -> {
-            if (trainingState == TrainingState.STOPPED) {
-                startNewTraining();
-            } else if (trainingState == TrainingState.PAUSED) {
-                resumeTraining();
-            }
-        });
-
-        btnPause.setOnClickListener(v -> pauseTraining());
-        btnStop.setOnClickListener(v -> {
-            if (trainingState != TrainingState.STOPPED) {
-                showStopConfirmationDialog();
-            }
-        });
-
-        updateButtonVisibility();
-    }
-
-    private void setupHeartRateZones() {
-        // Calculate thresholds based on max heart rate (example for age 30)
-        int maxHR = 220 - 30;
-        for (int i = 0; i < 5; i++) {
-            zoneThresholds[i] = (int) ((i + 5) * 0.1 * maxHR);
-        }
-
-        createZoneViews();
-    }
-
-    private void createZoneViews() {
-        String[] zoneNames = {"Zone 1", "Zone 2", "Zone 3", "Zone 4", "Zone 5"};
-        int[] zoneColors = {
-                R.color.zone1,
-                R.color.zone2,
-                R.color.zone3,
-                R.color.zone4,
-                R.color.zone5
-        };
-
-        zonesContainer.removeAllViews();
-
-        for (int i = 0; i < 5; i++) {
-            TextView zoneView = new TextView(this);
-            zoneView.setText(String.format("%s\n(%d-%d BPM)",
-                    zoneNames[i],
-                    i == 0 ? 0 : zoneThresholds[i-1],
-                    zoneThresholds[i]));
-            zoneView.setTextSize(16);
-            zoneView.setGravity(Gravity.CENTER);
-            zoneView.setPadding(16, 16, 16, 16);
-            zoneView.setBackgroundColor(getResources().getColor(zoneColors[i]));
-
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-            );
-            params.setMargins(0, 8, 0, 8);
-            zonesContainer.addView(zoneView, params);
-        }
-    }
-
-    private void updateZones(int heartRate) {
-        for (int i = 0; i < zonesContainer.getChildCount(); i++) {
-            TextView zoneView = (TextView) zonesContainer.getChildAt(i);
-            boolean isInZone = (i == 0 && heartRate < zoneThresholds[0]) ||
-                    (i == 4 && heartRate >= zoneThresholds[3]) ||
-                    (i > 0 && i < 4 && heartRate >= zoneThresholds[i-1] && heartRate < zoneThresholds[i]);
-
-            zoneView.setAlpha(isInZone ? 1.0f : 0.3f);
-        }
-    }
-
-    private void startNewTraining() {
-        trainingState = TrainingState.RUNNING;
-        startTime = System.currentTimeMillis();
-        elapsedTime = 0;
-        totalHeartRate = 0;
-        heartRateReadings = 0;
-        updateButtonVisibility();
-        startTimer();
-    }
-
-    private void resumeTraining() {
-        trainingState = TrainingState.RUNNING;
-        startTime = System.currentTimeMillis() - elapsedTime;
-        updateButtonVisibility();
-        startTimer();
-    }
-
-    private void pauseTraining() {
-        trainingState = TrainingState.PAUSED;
-        elapsedTime = System.currentTimeMillis() - startTime;
-        updateButtonVisibility();
-    }
-
-    private void stopTraining() {
-        trainingState = TrainingState.STOPPED;
-        saveTrainingData();
-        resetTrainingData();
-        updateButtonVisibility();
-    }
-
-    private void updateButtonVisibility() {
-        switch (trainingState) {
-            case RUNNING:
-                btnStart.setVisibility(View.GONE);
-                btnPause.setVisibility(View.VISIBLE);
-                btnStop.setVisibility(View.VISIBLE);
-                break;
-            case PAUSED:
-                btnStart.setVisibility(View.VISIBLE);
-                btnPause.setVisibility(View.GONE);
-                btnStop.setVisibility(View.VISIBLE);
-                break;
-            case STOPPED:
-                btnStart.setVisibility(View.VISIBLE);
-                btnPause.setVisibility(View.GONE);
-                btnStop.setVisibility(View.GONE);
-                break;
-        }
-    }
-
-    private void startTimer() {
-        new Thread(() -> {
-            while (trainingState == TrainingState.RUNNING) {
-                updateTimerDisplay();
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    Log.e(TAG, "Timer interrupted", e);
-                    Thread.currentThread().interrupt();
-                    break;
+        
+        // Inicializar FAB
+        fab = findViewById(R.id.fab);
+        if (fab != null) {
+            fab.setOnClickListener(view -> {
+                if (isMonitoring) {
+                    stopMonitoring();
+                } else {
+                    startMonitoring();
                 }
-            }
-        }).start();
-    }
-
-    private void updateTimerDisplay() {
-        long currentElapsed = (trainingState == TrainingState.RUNNING)
-                ? System.currentTimeMillis() - startTime
-                : elapsedTime;
-
-        runOnUiThread(() -> {
-            long hours = currentElapsed / 3600000;
-            long minutes = (currentElapsed / 60000) % 60;
-            long seconds = (currentElapsed / 1000) % 60;
-            timerTextView.setText(String.format("%02d:%02d:%02d", hours, minutes, seconds));
-        });
-    }
-
-    private void saveTrainingData() {
-        String name = trainingName.getText().toString();
-        String comment = trainingComment.getText().toString();
-        double averageHR = heartRateReadings > 0 ? (double) totalHeartRate / heartRateReadings : 0;
-
-        // TODO: Implement actual data saving
-        Log.d(TAG, String.format("Training saved - Name: %s, Avg HR: %.1f, Duration: %d sec",
-                name, averageHR, elapsedTime / 1000));
-
-        // Obtén una instancia de la base de datos
-        com.google.firebase.database.FirebaseDatabase database = com.google.firebase.database.FirebaseDatabase.getInstance();
-        // Obtén una referencia a la ruta donde guardarás los datos
-        com.google.firebase.database.DatabaseReference trainingRef = database.getReference("entrenamientos"); // "entrenamientos" es el nombre de la tabla
-
-        // Crea un objeto para guardar los datos
-        TrainingData trainingData = new TrainingData(name, comment, averageHR, elapsedTime / 1000);
-
-        // Guarda los datos en Firebase
-        trainingRef.push().setValue(trainingData); // push() genera una clave única para cada entrenamiento
-    }
-
-    public class TrainingData {
-        public String name;
-        public String comment;
-        public double averageHR;
-        public long duration;
-
-        public TrainingData() {
-            // Constructor vacío requerido por Firebase
+            });
         }
-
-        public TrainingData(String name, String comment, double averageHR, long duration) {
-            this.name = name;
-            this.comment = comment;
-            this.averageHR = averageHR;
-            this.duration = duration;
-        }
-    }
-
-    private void resetTrainingData() {
-        elapsedTime = 0;
-        timerTextView.setText("00:00:00");
-        heartRateTextView.setText("-- BPM");
-        trainingName.setText("");
-        trainingComment.setText("");
-        totalHeartRate = 0;
-        heartRateReadings = 0;
-    }
-
-    private void showStopConfirmationDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("Stop Training")
-                .setMessage("Are you sure you want to stop this training session?")
-                .setPositiveButton("Stop", (dialog, which) -> stopTraining())
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    // Bluetooth and Permissions Management
-
-    private void checkPermissions() {
-        List<String> permissions = new ArrayList<>();
-
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-            permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
-                    != PackageManager.PERMISSION_GRANTED) {
-                permissions.add(Manifest.permission.BLUETOOTH_SCAN);
-            }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
-                    != PackageManager.PERMISSION_GRANTED) {
-                permissions.add(Manifest.permission.BLUETOOTH_CONNECT);
-            }
-        }
-
-        if (!permissions.isEmpty()) {
-            ActivityCompat.requestPermissions(this,
-                    permissions.toArray(new String[0]),
-                    PERMISSION_REQUEST_CODE);
+        
+        // Inicializar el fragmento de monitor
+        if (savedInstanceState == null) {
+            monitorFragment = new MonitorFragment();
+            getSupportFragmentManager().beginTransaction()
+                    .replace(R.id.fragmentContainer, monitorFragment, "monitor")
+                    .commit();
         } else {
-            startBleScan();
+            monitorFragment = (MonitorFragment) getSupportFragmentManager().findFragmentByTag("monitor");
+            if (monitorFragment == null) {
+                monitorFragment = new MonitorFragment();
+                getSupportFragmentManager().beginTransaction()
+                        .replace(R.id.fragmentContainer, monitorFragment, "monitor")
+                        .commit();
+            }
         }
+        
+        // Inicializar manejadores
+        permissionHandler = new PermissionHandler(this);
+        permissionHandler.setPermissionListener(this);
+        bluetoothHandler = new BluetoothHandler(this, this);
+        dbHelper = new DatabaseHelper(this);
+        
+        // Verificar permisos
+        permissionHandler.checkPermissions();
     }
-
+    
     @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
-                                           @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            boolean allGranted = true;
-            for (int result : grantResults) {
-                if (result != PackageManager.PERMISSION_GRANTED) {
-                    allGranted = false;
-                    break;
-                }
-            }
-
-            if (allGranted) {
-                startBleScan();
-            } else {
-                Toast.makeText(this, "Required permissions not granted", Toast.LENGTH_LONG).show();
-                finish();
-            }
-        }
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.main_menu, menu);
+        return true;
     }
-
-
-
-
-
-
-
-
-    //hasta aca tengo
-
-    private void startBleScan() {
-        try {
-            if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
-                statusTextView.setText(getString(R.string.error_bluetooth_disabled));
-                return;
-            }
-
-            bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
-            if (bluetoothLeScanner == null) {
-                statusTextView.setText(getString(R.string.error_scanner_not_available));
-                return;
-            }
-
-            // Verificar permiso para Android 12+ (API 31)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
-                        != PackageManager.PERMISSION_GRANTED) {
-                    Toast.makeText(this, getString(R.string.error_permissions_required), Toast.LENGTH_SHORT).show();
-                    return;
-                }
-            }
-
-            statusTextView.setText(getString(R.string.status_scanning));
-            bluetoothLeScanner.startScan(new ScanCallback() {
-                @Override
-                public void onScanResult(int callbackType, ScanResult result) {
-                    BluetoothDevice device = result.getDevice();
-                    Log.d("BLE_SCAN", "Dispositivo encontrado: " + device.getName() + " (" + device.getAddress() + ")");
-
-                    if (result.getScanRecord() != null &&
-                            result.getScanRecord().getServiceUuids() != null &&
-                            result.getScanRecord().getServiceUuids().contains(new ParcelUuid(HEART_RATE_SERVICE_UUID))) {
-                        Log.d("BLE_SCAN", "Servicio de frecuencia cardíaca encontrado en: " + device.getName());
-                        stopScan();
-                        connectToDevice(device);
-                    }
-                }
-
-
-                @Override
-                public void onScanFailed(int errorCode) {
-                    Log.e("BLE", "Error al escanear: " + errorCode);
-                    statusTextView.setText(getString(R.string.error_scan_failed, errorCode));
-                }
-
-            });
-        } catch (SecurityException e) {
-            statusTextView.setText(getString(R.string.error_permissions, e.getMessage()));
+    
+    @Override
+    public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+        int id = item.getItemId();
+        
+        if (id == R.id.action_history) {
+            showFragment(new HistoryFragment(), "history");
+            return true;
+        } else if (id == R.id.action_hrv) {
+            // Mostramos una lista de sesiones para seleccionar
+            showSessionSelectionDialog();
+            return true;
+        } else if (id == R.id.action_settings) {
+            showFragment(new SettingsFragment(), "settings");
+            return true;
         }
+        
+        return super.onOptionsItemSelected(item);
     }
-
-
-    private void stopScan() {
-        try {
-            if (bluetoothLeScanner != null) {
-                bluetoothLeScanner.stopScan(new ScanCallback() {});
-            }
-        } catch (SecurityException e) {
-            statusTextView.setText(getString(R.string.error_stop_scan, e.getMessage()));
-        }
-    }
-
-    private void connectToDevice(BluetoothDevice device) {
-        try {
-            // Verificar permiso para Android 12+ (API 31)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
-                        != PackageManager.PERMISSION_GRANTED) {
-                    Toast.makeText(this, getString(R.string.error_permissions_required), Toast.LENGTH_SHORT).show();
-                    return; // Detener si no hay permisos
-                }
-            }
-
-            // Conectar al dispositivo
-            statusTextView.setText(getString(R.string.status_connecting));
-            bluetoothGatt = device.connectGatt(this, false, new BluetoothGattCallback() {
-                @Override
-                public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
-                    if (newState == BluetoothGatt.STATE_CONNECTED) {
-                        runOnUiThread(() -> statusTextView.setText(getString(R.string.status_discovering_services)));
-                        gatt.discoverServices();
-                    } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
-                        runOnUiThread(() -> statusTextView.setText(getString(R.string.status_disconnected)));
-                        bluetoothGatt = null;
-                    }
-                }
-
-
-                @Override
-                public void onServicesDiscovered(BluetoothGatt gatt, int status) {
-                    if (status == BluetoothGatt.GATT_SUCCESS) {
-                        // Obtener la característica de frecuencia cardíaca
-                        BluetoothGattCharacteristic characteristic = null;
-                        if (gatt.getService(HEART_RATE_SERVICE_UUID) != null) {
-                            characteristic = gatt
-                                    .getService(HEART_RATE_SERVICE_UUID)
-                                    .getCharacteristic(HEART_RATE_CHARACTERISTIC_UUID);
-                        }
-
-                        // Verificar si se encontró la característica
-                        if (characteristic != null) {
-                            gatt.setCharacteristicNotification(characteristic, true);
-
-                            // Configurar el descriptor para habilitar notificaciones
-                            BluetoothGattDescriptor descriptor = characteristic.getDescriptor(
-                                    UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"));
-
-                            if (descriptor != null) {
-                                descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-                                gatt.writeDescriptor(descriptor);
-                            }
-
-                            runOnUiThread(() -> statusTextView.setText(getString(R.string.status_ready)));
-                        } else {
-                            // Manejar el caso donde la característica no se encuentra
-                            runOnUiThread(() -> statusTextView.setText(getString(R.string.error_characteristic_not_found)));
-                        }
-                    } else {
-                        // Manejar el caso donde no se descubrieron los servicios correctamente
-                        runOnUiThread(() -> statusTextView.setText(getString(R.string.error_services_discovery_failed, status)));
-                    }
-                }
-
-
-
-                @Override
-                public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
-                    if (characteristic.getUuid().equals(HEART_RATE_CHARACTERISTIC_UUID)) {
-                        int heartRate = parseHeartRate(characteristic.getValue());
-                        totalHeartRate += heartRate;
-                        heartRateReadings++;
-
-                        runOnUiThread(() -> {
-                            heartRateTextView.setText(heartRate + " BPM");
-                            updateZones(heartRate);
-                        });
-                    }
-                }
-
-
-
-
-                private int parseHeartRate(byte[] data) {
-                    int format = (data[0] & 0x01) == 0 ? BluetoothGattCharacteristic.FORMAT_UINT8
-                            : BluetoothGattCharacteristic.FORMAT_UINT16;
-                    return format == BluetoothGattCharacteristic.FORMAT_UINT8
-                            ? data[1] & 0xFF
-                            : ((data[2] & 0xFF) << 8) | (data[1] & 0xFF);
-                }
-
-            });
-        } catch (SecurityException e) {
-            statusTextView.setText(getString(R.string.error_permissions, e.getMessage()));
-        }
-    }
-
-
+    
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        stopScan(); // Detener el escaneo BLE
-
-        // Verificar y manejar el permiso BLUETOOTH_CONNECT
-        if (bluetoothGatt != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                    // Si no se tiene el permiso, no ejecutar bluetoothGatt.close()
-                    return;
-                }
+        if (isMonitoring) {
+            stopMonitoring();
+        }
+        bluetoothHandler.close();
+    }
+    
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        permissionHandler.handlePermissionResult(requestCode, permissions, grantResults);
+    }
+    
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_ENABLE_BT) {
+            if (resultCode == RESULT_OK) {
+                // Bluetooth activado, continuar
+                checkBluetoothAndScan();
+            } else {
+                // Bluetooth no activado
+                Toast.makeText(this, R.string.error_bluetooth_disabled, Toast.LENGTH_SHORT).show();
             }
-            bluetoothGatt.close(); // Cerrar la conexión Bluetooth GATT
+        }
+    }
+    
+    // PermissionHandler.PermissionListener
+    @Override
+    public void onPermissionGranted(String permission) {
+        if (permission.equals(PermissionHandler.BLUETOOTH_PERMISSION)) {
+            startMonitoring();
+        }
+    }
+    
+    @Override
+    public void onPermissionDenied(String permission) {
+        Toast.makeText(this, R.string.bluetooth_permission_denied, Toast.LENGTH_LONG).show();
+    }
+    
+    // BluetoothListener
+    @Override
+    public void onStatusUpdate(String status) {
+        if (monitorFragment != null && monitorFragment.isAdded()) {
+            monitorFragment.updateConnectionStatus(status);
+        }
+    }
+    
+    @Override
+    public void onBluetoothError(int errorCode) {
+        String errorMessage;
+        switch (errorCode) {
+            case BluetoothHandler.ERROR_SCAN_FAILED:
+                errorMessage = getString(R.string.error_scan_failed_simple);
+                break;
+            case BluetoothHandler.ERROR_CONNECT_FAILED:
+                errorMessage = getString(R.string.error_connect_failed);
+                break;
+            case BluetoothHandler.ERROR_SERVICE_NOT_FOUND:
+                errorMessage = getString(R.string.error_service_not_found);
+                break;
+            default:
+                errorMessage = getString(R.string.error_unknown);
+                break;
+        }
+        
+        Toast.makeText(this, errorMessage, Toast.LENGTH_LONG).show();
+        stopMonitoring();
+    }
+    
+    @Override
+    public void onHeartRateUpdate(int heartRate) {
+        if (monitorFragment != null && monitorFragment.isAdded()) {
+            monitorFragment.updateHeartRate(heartRate);
+        }
+        
+        // Guardar datos en la base de datos
+        if (currentSessionId != -1) {
+            HeartRateData data = new HeartRateData();
+            data.setSessionId(currentSessionId);
+            data.setHeartRate(heartRate);
+            data.setTimestamp(System.currentTimeMillis());
+            
+            // Usar un hilo para insertar los datos, para no bloquear la UI
+            new Thread(() -> dbHelper.insertHeartRateData(data)).start();
+        }
+    }
+    
+    @Override
+    public void onRRIntervalsUpdate(List<Integer> intervals) {
+        // Guardar intervalo RR para análisis de HRV
+        rrIntervals.addAll(intervals);
+        
+        if (monitorFragment != null && monitorFragment.isAdded() && !intervals.isEmpty()) {
+            monitorFragment.updateRRInterval(intervals.get(intervals.size() - 1));
+        }
+    }
+    
+    @Override
+    public void onScanComplete(List<BluetoothHandler.BluetoothDeviceInfo> devices) {
+        if (devices.isEmpty()) {
+            Toast.makeText(this, R.string.no_heart_rate_devices, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        // Obtener nombres de dispositivos
+        final String[] deviceNames = new String[devices.size()];
+        for (int i = 0; i < devices.size(); i++) {
+            deviceNames[i] = devices.get(i).getName();
+        }
+        
+        // Mostrar diálogo con dispositivos disponibles
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.dialog_select_device)
+                .setItems(deviceNames, (dialog, which) -> {
+                    // Conectar con el dispositivo seleccionado
+                    bluetoothHandler.connectToDevice(devices.get(which).getAddress());
+                })
+                .setNegativeButton(R.string.dialog_cancel, (dialog, which) -> {
+                    stopMonitoring();
+                })
+                .show();
+    }
+    
+    public void onDeviceConnected(String deviceName) {
+        Toast.makeText(this, getString(R.string.connected_to, deviceName), Toast.LENGTH_SHORT).show();
+        if (monitorFragment != null && monitorFragment.isAdded()) {
+            monitorFragment.updateConnectionStatus(getString(R.string.connected_to, deviceName));
+        }
+    }
+    
+    public void onDeviceDisconnected() {
+        Toast.makeText(this, R.string.device_disconnected, Toast.LENGTH_SHORT).show();
+        if (monitorFragment != null && monitorFragment.isAdded()) {
+            monitorFragment.updateConnectionStatus(getString(R.string.status_disconnected));
+        }
+    }
+    
+    // MonitorFragmentListener
+    public boolean isMonitoringActive() {
+        return isMonitoring;
+    }
+    
+    @Override
+    public void onHeartRateUpdated(int heartRate) {
+        // Implementar lógica para manejar actualizaciones de frecuencia cardíaca
+        // Por ejemplo, guardar el valor para análisis posterior
+        if (hrvAnalyzer != null) {
+            // También podríamos actualizar otros componentes de la UI aquí
+        }
+    }
+    
+    @Override
+    public void onRRIntervalUpdated(int rrInterval) {
+        // Implementar lógica para manejar actualizaciones de intervalos RR
+        if (hrvAnalyzer != null) {
+            hrvAnalyzer.addRRInterval(rrInterval);
+        }
+    }
+    
+    @Override
+    public void onConnectionStatusChanged(String status) {
+        // Implementar lógica para manejar cambios de estado de conexión
+        // Por ejemplo, actualizar la UI o tomar acciones basadas en el estado
+        runOnUiThread(() -> {
+            // Actualizar alguna UI si es necesario
+        });
+    }
+    
+    // HistoryFragmentListener
+    @Override
+    public void onSessionClicked(long sessionId) {
+        HRVFragment hrvFragment = HRVFragment.newInstance(sessionId);
+        showFragment(hrvFragment, "hrv");
+    }
+    
+    @Override
+    public void onSessionExportRequested(long sessionId, List<HeartRateData> heartRateDataList) {
+        exportHeartRateData(sessionId, heartRateDataList);
+    }
+    
+    @Override
+    public void onSessionDeleteRequested(long sessionId) {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.dialog_confirm_delete_title)
+                .setMessage(R.string.dialog_confirm_delete_message)
+                .setPositiveButton(R.string.dialog_delete, (dialog, which) -> {
+                    if (dbHelper.deleteSession(sessionId)) {
+                        Toast.makeText(this, R.string.msg_session_deleted, Toast.LENGTH_SHORT).show();
+                        
+                        // Actualizar la lista de sesiones
+                        if (getSupportFragmentManager().findFragmentByTag("history") instanceof HistoryFragment) {
+                            ((HistoryFragment) getSupportFragmentManager().findFragmentByTag("history")).refreshSessionList();
+                        }
+                    } else {
+                        Toast.makeText(this, R.string.error_deleting_session, Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton(R.string.dialog_cancel, null)
+                .show();
+    }
+    
+    // HRVFragmentListener
+    @Override
+    public void onHRVFragmentExportRequested(long sessionId, List<Integer> rrIntervals) {
+        exportHRVData(sessionId, rrIntervals);
+    }
+    
+    // SettingsFragmentListener
+    @Override
+    public void onSettingsSaved() {
+        // Actualizar la UI con los nuevos ajustes
+        if (monitorFragment != null && monitorFragment.isAdded()) {
+            monitorFragment.updateHeartRateZones();
+        }
+    }
+    
+    private void showFragment(Fragment fragment, String tag) {
+        if (isMonitoring) {
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.dialog_session_active_title)
+                    .setMessage(R.string.dialog_session_active_message)
+                    .setPositiveButton(R.string.dialog_stop_session, (dialog, which) -> {
+                        stopMonitoring();
+                        navigateToFragment(fragment, tag);
+                    })
+                    .setNegativeButton(R.string.dialog_cancel, null)
+                    .show();
+        } else {
+            navigateToFragment(fragment, tag);
+        }
+    }
+    
+    private void navigateToFragment(Fragment fragment, String tag) {
+        // Ocultar FAB si no estamos en la pantalla de monitoreo
+        if (!"monitor".equals(tag)) {
+            fab.hide();
+        } else {
+            fab.show();
+        }
+
+        FragmentManager fragmentManager = getSupportFragmentManager();
+        FragmentTransaction transaction = fragmentManager.beginTransaction();
+        transaction.replace(R.id.fragmentContainer, fragment, tag);
+        
+        // Si no estamos yendo al fragmento inicial (monitor), añadir a la pila trasera
+        if (!"monitor".equals(tag)) {
+            transaction.addToBackStack(null);
+        }
+        
+        transaction.commit();
+    }
+    
+    private void showSessionSelectionDialog() {
+        List<WorkoutSession> sessions = dbHelper.getAllSessions();
+        
+        if (sessions.isEmpty()) {
+            Toast.makeText(this, R.string.error_no_sessions, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        // Obtener títulos de las sesiones
+        final String[] sessionTitles = new String[sessions.size()];
+        final long[] sessionIds = new long[sessions.size()];
+        
+        SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault());
+        
+        for (int i = 0; i < sessions.size(); i++) {
+            WorkoutSession session = sessions.get(i);
+            sessionTitles[i] = session.getTitle() + " - " + sdf.format(new Date(session.getStartTime()));
+            sessionIds[i] = session.getId();
+        }
+        
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.dialog_select_session_title)
+                .setItems(sessionTitles, (dialog, which) -> {
+                    long sessionId = sessionIds[which];
+                    HRVFragment hrvFragment = HRVFragment.newInstance(sessionId);
+                    showFragment(hrvFragment, "hrv");
+                })
+                .setNegativeButton(R.string.dialog_cancel, null)
+                .show();
+    }
+    
+    private void startMonitoring() {
+        // Verificar permisos Bluetooth
+        if (!permissionHandler.checkBluetoothPermissions()) {
+            permissionHandler.requestBluetoothPermissions();
+            return;
+        }
+        
+        // Verificar si Bluetooth está habilitado
+        if (!bluetoothHandler.isBluetoothEnabled()) {
+            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            startActivityForResult(enableBtIntent, BluetoothHandler.REQUEST_ENABLE_BT);
+            return;
+        }
+        
+        // Iniciar escaneo de dispositivos
+        bluetoothHandler.startScan();
+        
+        // Crear nueva sesión
+        currentSessionId = createNewSession();
+        rrIntervals.clear(); // Limpiar datos anteriores
+        
+        // Actualizar UI
+        updateFabIcon(true);
+        isMonitoring = true;
+        
+        if (monitorFragment != null && monitorFragment.isAdded()) {
+            monitorFragment.updateMonitoringState(true);
+        }
+    }
+    
+    private void stopMonitoring() {
+        // Detener monitoreo de dispositivo
+        bluetoothHandler.disconnect();
+        
+        // Finalizar la sesión en la base de datos
+        if (currentSessionId != -1) {
+            finalizeSession(currentSessionId);
+        }
+        
+        // Actualizar UI
+        updateFabIcon(false);
+        isMonitoring = false;
+        
+        if (monitorFragment != null && monitorFragment.isAdded()) {
+            monitorFragment.updateMonitoringState(false);
+        }
+    }
+    
+    private void checkBluetoothAndScan() {
+        // Iniciar escaneo si Bluetooth está habilitado y tenemos permisos
+        if (bluetoothHandler.isBluetoothEnabled() && permissionHandler.checkBluetoothPermissions()) {
+            bluetoothHandler.startScan();
+            
+            // Crear nueva sesión
+            currentSessionId = createNewSession();
+            rrIntervals.clear(); // Limpiar datos anteriores
+            
+            // Actualizar UI
+            updateFabIcon(true);
+            isMonitoring = true;
+            
+            if (monitorFragment != null && monitorFragment.isAdded()) {
+                monitorFragment.updateMonitoringState(true);
+            }
+        } else {
+            // Si no hay Bluetooth, detener monitoreo
+            stopMonitoring();
+        }
+    }
+    
+    private void updateFabIcon(boolean isMonitoring) {
+        if (isMonitoring) {
+            fab.setImageResource(R.drawable.ic_stop);
+            fab.setContentDescription(getString(R.string.fab_stop_monitoring));
+        } else {
+            fab.setImageResource(R.drawable.ic_play);
+            fab.setContentDescription(getString(R.string.fab_start_monitoring));
+        }
+    }
+    
+    private long createNewSession() {
+        WorkoutSession session = new WorkoutSession();
+        session.setTitle(getString(R.string.session_default_title, 
+                new SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(new Date())));
+        session.setStartTime(System.currentTimeMillis());
+        session.setCaloriesBurned(0); // Se actualizará al finalizar
+        return dbHelper.insertSession(session);
+    }
+    
+    private void finalizeSession(long sessionId) {
+        // Obtener la sesión
+        WorkoutSession session = dbHelper.getSessionById(sessionId);
+        if (session == null) return;
+        
+        // Actualizar hora de finalización
+        session.setEndTime(System.currentTimeMillis());
+        
+        // Calcular calorías quemadas (ejemplo simple, mejorar con algoritmos reales)
+        long durationMinutes = (session.getEndTime() - session.getStartTime()) / 60000;
+        double calories = durationMinutes * 5; // Valor arbitrario para ejemplo
+        session.setCaloriesBurned((int)calories);
+        
+        // Guardar los datos de HRV
+        hrvAnalyzer = new HRVAnalyzer();
+        double[] rrData = new double[rrIntervals.size()];
+        for (int i = 0; i < rrIntervals.size(); i++) {
+            rrData[i] = rrIntervals.get(i);
+        }
+        
+        session.setSdnn(hrvAnalyzer.calculateSDNN(rrData));
+        session.setRmssd(hrvAnalyzer.calculateRMSSD(rrData));
+        session.setPnn50(hrvAnalyzer.calculatePNN50(rrData));
+        
+        // Calcular puntuación HRV
+        int hrvScore = hrvAnalyzer.calculateHRVScore(rrData);
+        session.setHrvScore(hrvScore);
+        
+        // Actualizar la sesión
+        dbHelper.updateSession(session);
+        
+        // Notificar que la sesión ha sido actualizada
+        if (getSupportFragmentManager().findFragmentByTag("history") instanceof HistoryFragment) {
+            ((HistoryFragment) getSupportFragmentManager().findFragmentByTag("history")).refreshSessionList();
+        }
+    }
+    
+    @Override
+    public void onBackPressed() {
+        if (getSupportFragmentManager().getBackStackEntryCount() > 0) {
+            getSupportFragmentManager().popBackStack();
+            fab.show(); // Mostrar FAB cuando volvemos al fragmento de monitoreo
+        } else {
+            super.onBackPressed();
         }
     }
 
+    private void exportHeartRateData(long sessionId, List<HeartRateData> dataList) {
+        if (dataList == null || dataList.isEmpty()) {
+            Toast.makeText(this, R.string.error_no_data_to_export, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        try {
+            // Crear archivo CSV en almacenamiento externo
+            File directory = new File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "HeartRateMonitor");
+            if (!directory.exists()) {
+                directory.mkdirs();
+            }
+            
+            WorkoutSession session = dbHelper.getSessionById(sessionId);
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault());
+            String fileName = "heartrate_" + dateFormat.format(new Date(session.getStartTime())) + ".csv";
+            File file = new File(directory, fileName);
+            
+            // Escribir datos
+            FileWriter writer = new FileWriter(file);
+            writer.append("Timestamp,HeartRate(BPM)\n");
+            
+            SimpleDateFormat timestampFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+            for (HeartRateData data : dataList) {
+                writer.append(timestampFormat.format(new Date(data.getTimestamp())))
+                      .append(",")
+                      .append(String.valueOf(data.getHeartRate()))
+                      .append("\n");
+            }
+            
+            writer.flush();
+            writer.close();
+            
+            // Compartir archivo
+            shareFile(file, "text/csv");
+            
+        } catch (IOException e) {
+            e.printStackTrace();
+            Toast.makeText(this, R.string.error_exporting_data, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void exportHRVData(long sessionId, List<Integer> rrIntervals) {
+        if (rrIntervals == null || rrIntervals.isEmpty()) {
+            Toast.makeText(this, R.string.error_no_data_to_export, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        try {
+            // Crear archivo CSV en almacenamiento externo
+            File directory = new File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "HeartRateMonitor");
+            if (!directory.exists()) {
+                directory.mkdirs();
+            }
+            
+            WorkoutSession session = dbHelper.getSessionById(sessionId);
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault());
+            String fileName = "hrv_" + dateFormat.format(new Date(session.getStartTime())) + ".csv";
+            File file = new File(directory, fileName);
+            
+            // Escribir datos
+            FileWriter writer = new FileWriter(file);
+            writer.append("Index,RR_Interval(ms)\n");
+            
+            for (int i = 0; i < rrIntervals.size(); i++) {
+                writer.append(String.valueOf(i + 1))
+                      .append(",")
+                      .append(String.valueOf(rrIntervals.get(i)))
+                      .append("\n");
+            }
+            
+            writer.flush();
+            writer.close();
+            
+            // Compartir archivo
+            shareFile(file, "text/csv");
+            
+        } catch (IOException e) {
+            e.printStackTrace();
+            Toast.makeText(this, R.string.error_exporting_data, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void shareFile(File file, String mimeType) {
+        Intent shareIntent = new Intent(Intent.ACTION_SEND);
+        shareIntent.setType(mimeType);
+        
+        // Generar URI usando FileProvider
+        Uri fileUri = FileProvider.getUriForFile(this,
+                getApplicationContext().getPackageName() + ".provider", file);
+        
+        shareIntent.putExtra(Intent.EXTRA_STREAM, fileUri);
+        shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        
+        startActivity(Intent.createChooser(shareIntent, getString(R.string.share_file)));
+    }
 }

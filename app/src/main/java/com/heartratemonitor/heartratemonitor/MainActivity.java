@@ -103,6 +103,17 @@ public class MainActivity extends AppCompatActivity implements
             }
         }
         
+        // Configurar la frecuencia cardíaca máxima en el fragmento de monitor
+        // Esto debería venir de las preferencias del usuario
+        // Por defecto podríamos usar la fórmula 220 - edad
+        int userAge = getUserAgeFromPreferences(); // Implementar esta función
+        if (userAge > 0) {
+            int maxHeartRate = 220 - userAge;
+            if (monitorFragment != null) {
+                monitorFragment.setMaxHeartRate(maxHeartRate);
+            }
+        }
+        
         // Inicializar manejadores
         permissionHandler = new PermissionHandler(this);
         permissionHandler.setPermissionListener(this);
@@ -655,5 +666,14 @@ public class MainActivity extends AppCompatActivity implements
         shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         
         startActivity(Intent.createChooser(shareIntent, getString(R.string.share_file)));
+    }
+
+    // Método para obtener la edad del usuario desde las preferencias
+    private int getUserAgeFromPreferences() {
+        // Obtener preferencias compartidas
+        android.content.SharedPreferences prefs = getSharedPreferences("UserSettings", MODE_PRIVATE);
+        
+        // Obtener la edad del usuario (por defecto 30 si no está configurada)
+        return prefs.getInt("user_age", 30);
     }
 }

@@ -33,6 +33,7 @@ public class MonitorFragment extends Fragment {
     private TextView tvRRInterval;
     private TextView tvMonitoringTime;
     private TextView tvDescription;
+    private TextView tvHeartRatePercentage; // Nuevo TextView para el porcentaje
     private HeartRateView heartRateIndicator;
     
     private TextView zone1;
@@ -44,6 +45,9 @@ public class MonitorFragment extends Fragment {
     private List<Integer> zones;
     private long monitoringStartTime;
     private boolean isMonitoring = false;
+    
+    // Frecuencia cardíaca máxima (valor por defecto, debería personalizarse según edad y condición del usuario)
+    private int maxHeartRate = 220;
     
     @Override
     public void onAttach(Context context) {
@@ -68,6 +72,7 @@ public class MonitorFragment extends Fragment {
         // Inicializar vistas con los IDs correctos del layout
         tvConnectionStatus = view.findViewById(R.id.statusText);
         tvHeartRate = view.findViewById(R.id.heartRateText);
+        tvHeartRatePercentage = view.findViewById(R.id.heartRatePercentageText);
         
         // Estas vistas no están en el layout actual, las comentamos por ahora
         // tvRRInterval = view.findViewById(R.id.tvRRInterval);
@@ -99,6 +104,16 @@ public class MonitorFragment extends Fragment {
         zones.add(150); // Zona 3: 121-150
         zones.add(170); // Zona 4: 151-170
         // Zona 5: >170
+    }
+    
+    // Método para calcular y mostrar el porcentaje de frecuencia cardíaca máxima
+    private void updateHeartRatePercentage(int heartRate) {
+        // Calcular el porcentaje de frecuencia cardíaca máxima
+        int percentage = (int) (((double) heartRate / maxHeartRate) * 100);
+        // Mostrar el porcentaje en el TextView correspondiente
+        if (tvHeartRatePercentage != null) {
+            tvHeartRatePercentage.setText(String.format("%d%%", percentage));
+        }
     }
     
     // Método agregado para controlar el estado de monitoreo
@@ -135,6 +150,9 @@ public class MonitorFragment extends Fragment {
                 if (tvHeartRate != null) {
                     tvHeartRate.setText(String.valueOf(heartRate));
                     
+                    // Actualizar el porcentaje de frecuencia cardíaca máxima
+                    updateHeartRatePercentage(heartRate);
+                    
                     // Actualizar la zona de frecuencia cardíaca
                     updateHeartRateZone(heartRate);
                     
@@ -156,6 +174,11 @@ public class MonitorFragment extends Fragment {
                 }
             });
         }
+    }
+    
+    // Método para establecer la frecuencia cardíaca máxima
+    public void setMaxHeartRate(int maxHeartRate) {
+        this.maxHeartRate = maxHeartRate;
     }
 
     // Método para actualizar la zona de frecuencia cardíaca basada en el valor actual

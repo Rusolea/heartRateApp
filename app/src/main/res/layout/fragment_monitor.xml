@@ -45,20 +45,31 @@
                 android:text="@string/heart_rate"
                 android:textSize="18sp" />
 
+            <!-- Porcentaje de frecuencia cardíaca máxima -->
+            <TextView
+                android:id="@+id/heartRatePercentageText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0%"
+                android:textColor="@color/colorAccent"
+                android:textSize="72sp"
+                android:textStyle="bold" />
+                
+            <!-- Valor BPM -->
             <TextView
                 android:id="@+id/heartRateText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="--"
                 android:textColor="@color/colorAccent"
-                android:textSize="72sp"
-                android:textStyle="bold" />
+                android:textSize="24sp" />
 
             <TextView
+                android:id="@+id/heartRateUnit"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="BPM"
-                android:textSize="18sp" />
+                android:textSize="16sp" />
         </LinearLayout>
     </androidx.cardview.widget.CardView>
 

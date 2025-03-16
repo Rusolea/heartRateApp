@@ -164,9 +164,43 @@ public class MonitorFragment extends Fragment {
         // Mostrar el porcentaje en el TextView correspondiente
         if (tvHeartRatePercentage != null) {
             tvHeartRatePercentage.setText(String.format("%d%%", percentage));
+            
+            // Actualizar el color del texto según la zona
+            updateHeartRatePercentageColor(heartRate);
         }
     }
     
+    // Método para cambiar el color del texto del porcentaje según la zona
+    private void updateHeartRatePercentageColor(int heartRate) {
+        if (tvHeartRatePercentage == null) return;
+        
+        int zone = getCurrentZone(heartRate);
+        int color;
+        
+        switch (zone) {
+            case 1:
+                color = getResources().getColor(R.color.zone1);
+                break;
+            case 2:
+                color = getResources().getColor(R.color.zone2);
+                break;
+            case 3:
+                color = getResources().getColor(R.color.zone3);
+                break;
+            case 4:
+                color = getResources().getColor(R.color.zone4);
+                break;
+            case 5:
+                color = getResources().getColor(R.color.zone5);
+                break;
+            default:
+                color = getResources().getColor(R.color.colorAccent); // Color por defecto para zona 0
+                break;
+        }
+        
+        tvHeartRatePercentage.setTextColor(color);
+    }
+
     // Método agregado para controlar el estado de monitoreo
     public void updateMonitoringState(boolean isMonitoring) {
         this.isMonitoring = isMonitoring;
@@ -259,6 +293,9 @@ public class MonitorFragment extends Fragment {
             
             // Actualizar los porcentajes de tiempo en zona
             updateZoneTimePercentages();
+            
+            // Actualizar el color del texto del porcentaje
+            updateHeartRatePercentageColor(heartRate);
         }
         
         TextView zoneView = null;
@@ -307,32 +344,41 @@ public class MonitorFragment extends Fragment {
         
         int zone = getCurrentZone(heartRate);
         String description = "";
+        int color;
         
         switch (zone) {
             case 0:
                 description = "Fuera de zona - Actividad muy ligera";
+                color = getResources().getColor(R.color.colorAccent); // Color por defecto
                 break;
             case 1:
                 description = "Zona 1 - Actividad muy ligera (50-60%)";
+                color = getResources().getColor(R.color.zone1);
                 break;
             case 2:
                 description = "Zona 2 - Quema de grasa (60-70%)";
+                color = getResources().getColor(R.color.zone2);
                 break;
             case 3:
                 description = "Zona 3 - Cardio (70-80%)";
+                color = getResources().getColor(R.color.zone3);
                 break;
             case 4:
                 description = "Zona 4 - Rendimiento intenso (80-90%)";
+                color = getResources().getColor(R.color.zone4);
                 break;
             case 5:
                 description = "Zona 5 - Máximo esfuerzo (90-100%)";
+                color = getResources().getColor(R.color.zone5);
                 break;
             default:
                 description = "Sin datos de zona";
+                color = getResources().getColor(R.color.colorAccent);
                 break;
         }
         
         tvZoneDescription.setText(description);
+        tvZoneDescription.setTextColor(color);
     }
 
     public void updateRRInterval(int rrInterval) {

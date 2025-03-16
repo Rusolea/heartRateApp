@@ -20,17 +20,32 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
+    <!-- Display del tiempo transcurrido -->
+    <TextView
+        android:id="@+id/monitoringTimeText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:padding="8dp"
+        android:text="00:00:00"
+        android:textAlignment="center"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/statusText" />
+
     <!-- Visualización de frecuencia cardíaca -->
     <androidx.cardview.widget.CardView
         android:id="@+id/heartRateCard"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="8dp"
         app:cardCornerRadius="8dp"
         app:cardElevation="4dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/statusText">
+        app:layout_constraintTop_toBottomOf="@+id/monitoringTimeText">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -73,14 +88,28 @@
         </LinearLayout>
     </androidx.cardview.widget.CardView>
 
+    <!-- Descripción de la zona actual -->
+    <TextView
+        android:id="@+id/zoneDescriptionText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:padding="8dp"
+        android:text="Descripción de la zona"
+        android:textAlignment="center"
+        android:textSize="16sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/heartRateCard" />
+
     <!-- Indicador de zona cardíaca -->
     <LinearLayout
         android:id="@+id/zoneIndicator"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="16dp"
-        app:layout_constraintTop_toBottomOf="@+id/heartRateCard"
+        android:layout_marginTop="8dp"
+        app:layout_constraintTop_toBottomOf="@+id/zoneDescriptionText"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent">
 
@@ -91,7 +120,7 @@
             android:layout_weight="1"
             android:background="@color/zone1"
             android:padding="8dp"
-            android:text="1"
+            android:text="Z1\n0%"
             android:textAlignment="center"
             android:textColor="@android:color/white" />
 
@@ -102,7 +131,7 @@
             android:layout_weight="1"
             android:background="@color/zone2"
             android:padding="8dp"
-            android:text="2"
+            android:text="Z2\n0%"
             android:textAlignment="center"
             android:textColor="@android:color/white" />
 
@@ -113,7 +142,7 @@
             android:layout_weight="1"
             android:background="@color/zone3"
             android:padding="8dp"
-            android:text="3"
+            android:text="Z3\n0%"
             android:textAlignment="center"
             android:textColor="@android:color/white" />
 
@@ -124,7 +153,7 @@
             android:layout_weight="1"
             android:background="@color/zone4"
             android:padding="8dp"
-            android:text="4"
+            android:text="Z4\n0%"
             android:textAlignment="center"
             android:textColor="@android:color/white" />
 
@@ -135,7 +164,7 @@
             android:layout_weight="1"
             android:background="@color/zone5"
             android:padding="8dp"
-            android:text="5"
+            android:text="Z5\n0%"
             android:textAlignment="center"
             android:textColor="@android:color/white" />
     </LinearLayout>

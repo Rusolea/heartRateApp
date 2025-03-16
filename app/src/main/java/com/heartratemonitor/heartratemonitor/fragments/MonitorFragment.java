@@ -2,6 +2,8 @@ package com.heartratemonitor.heartratemonitor.fragments;
 
 import android.content.Context;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -32,8 +34,8 @@ public class MonitorFragment extends Fragment {
     private TextView tvHeartRate;
     private TextView tvRRInterval;
     private TextView tvMonitoringTime;
-    private TextView tvDescription;
-    private TextView tvHeartRatePercentage; // Nuevo TextView para el porcentaje
+    private TextView tvZoneDescription;
+    private TextView tvHeartRatePercentage;
     private HeartRateView heartRateIndicator;
     
     private TextView zone1;
@@ -45,6 +47,15 @@ public class MonitorFragment extends Fragment {
     private List<Integer> zones;
     private long monitoringStartTime;
     private boolean isMonitoring = false;
+    
+    // Variables para el seguimiento del tiempo en zonas
+    private long[] zoneTimes = new long[6]; // 0-5 zonas (0 es fuera de zona)
+    private int currentZone = 0;
+    private long lastZoneUpdateTime = 0;
+    
+    // Handler para actualizar el tiempo y los porcentajes periódicamente
+    private Handler timeHandler = new Handler(Looper.getMainLooper());
+    private Runnable timeUpdateRunnable;
     
     // Frecuencia cardíaca máxima (valor por defecto, debería personalizarse según edad y condición del usuario)
     private int maxHeartRate = 220;
@@ -73,11 +84,11 @@ public class MonitorFragment extends Fragment {
         tvConnectionStatus = view.findViewById(R.id.statusText);
         tvHeartRate = view.findViewById(R.id.heartRateText);
         tvHeartRatePercentage = view.findViewById(R.id.heartRatePercentageText);
+        tvMonitoringTime = view.findViewById(R.id.monitoringTimeText);
+        tvZoneDescription = view.findViewById(R.id.zoneDescriptionText);
         
         // Estas vistas no están en el layout actual, las comentamos por ahora
         // tvRRInterval = view.findViewById(R.id.tvRRInterval);
-        // tvMonitoringTime = view.findViewById(R.id.tvMonitoringTime);
-        // tvDescription = view.findViewById(R.id.tvDescription);
         // heartRateIndicator = view.findViewById(R.id.heartRateIndicator);
         
         // Inicializar zonas
@@ -87,7 +98,47 @@ public class MonitorFragment extends Fragment {
         zone4 = view.findViewById(R.id.zone4);
         zone5 = view.findViewById(R.id.zone5);
         
+        // Inicializar el array de tiempos en zona
+        for (int i = 0; i < zoneTimes.length; i++) {
+            zoneTimes[i] = 0;
+        }
+        
+        // Configurar el temporizador para actualizar la UI
+        timeUpdateRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (isMonitoringActive()) {
+                    updateMonitoringTime();
+                    updateZoneTimes();
+                    timeHandler.postDelayed(this, 1000); // Actualizar cada segundo
+                }
+            }
+        };
+        
         updateHeartRateZones();
+    }
+    
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (isMonitoringActive()) {
+            startTimeUpdates();
+        }
+    }
+    
+    @Override
+    public void onPause() {
+        super.onPause();
+        stopTimeUpdates();
+    }
+    
+    private void startTimeUpdates() {
+        stopTimeUpdates(); // Por seguridad, para evitar múltiples runnables
+        timeHandler.post(timeUpdateRunnable);
+    }
+    
+    private void stopTimeUpdates() {
+        timeHandler.removeCallbacks(timeUpdateRunnable);
     }
     
     private boolean isMonitoringActive() {
@@ -161,8 +212,8 @@ public class MonitorFragment extends Fragment {
                     //     heartRateIndicator.setValue(heartRate);
                     // }
                     
-                    // Actualizar texto de descripción según la zona (comentado porque no existe en el layout)
-                    // updateDescriptionText(heartRate);
+                    // Actualizar texto de descripción según la zona
+                    updateZoneDescription(heartRate);
                     
                     // Actualizar tiempo de monitoreo
                     updateMonitoringTime();
@@ -195,10 +246,24 @@ public class MonitorFragment extends Fragment {
         if (zone5 != null) zone5.setAlpha(0.5f);
         
         // Destacar la zona actual
-        int currentZone = getCurrentZone(heartRate);
+        int newZone = getCurrentZone(heartRate);
+        
+        // Si ha cambiado la zona, actualizar tiempos
+        if (newZone != currentZone && isMonitoringActive()) {
+            long now = System.currentTimeMillis();
+            if (lastZoneUpdateTime > 0) {
+                zoneTimes[currentZone] += (now - lastZoneUpdateTime);
+            }
+            lastZoneUpdateTime = now;
+            currentZone = newZone;
+            
+            // Actualizar los porcentajes de tiempo en zona
+            updateZoneTimePercentages();
+        }
+        
         TextView zoneView = null;
         
-        switch (currentZone) {
+        switch (newZone) {
             case 1:
                 zoneView = zone1;
                 break;
@@ -236,38 +301,39 @@ public class MonitorFragment extends Fragment {
         return 5; // Zona máxima si excede todos los límites
     }
 
-    // Método para actualizar el texto descriptivo según la zona (comentado porque no existe en el layout)
-    /*
-    private void updateDescriptionText(int heartRate) {
-        if (tvDescription == null) return;
+    // Método para actualizar el texto descriptivo según la zona
+    private void updateZoneDescription(int heartRate) {
+        if (tvZoneDescription == null) return;
         
         int zone = getCurrentZone(heartRate);
         String description = "";
         
         switch (zone) {
+            case 0:
+                description = "Fuera de zona - Actividad muy ligera";
+                break;
             case 1:
-                description = getString(R.string.zone1_description);
+                description = "Zona 1 - Actividad muy ligera (50-60%)";
                 break;
             case 2:
-                description = getString(R.string.zone2_description);
+                description = "Zona 2 - Quema de grasa (60-70%)";
                 break;
             case 3:
-                description = getString(R.string.zone3_description);
+                description = "Zona 3 - Cardio (70-80%)";
                 break;
             case 4:
-                description = getString(R.string.zone4_description);
+                description = "Zona 4 - Rendimiento intenso (80-90%)";
                 break;
             case 5:
-                description = getString(R.string.zone5_description);
+                description = "Zona 5 - Máximo esfuerzo (90-100%)";
                 break;
             default:
-                description = getString(R.string.no_zone_description);
+                description = "Sin datos de zona";
                 break;
         }
         
-        tvDescription.setText(description);
+        tvZoneDescription.setText(description);
     }
-    */
 
     public void updateRRInterval(int rrInterval) {
         // También usar runOnUiThread para los intervalos RR
@@ -286,16 +352,52 @@ public class MonitorFragment extends Fragment {
         }
     }
 
+    // Actualizar los tiempos de zona (llamado por el handler cada segundo)
+    private void updateZoneTimes() {
+        if (isMonitoringActive() && lastZoneUpdateTime > 0) {
+            long now = System.currentTimeMillis();
+            zoneTimes[currentZone] += (now - lastZoneUpdateTime);
+            lastZoneUpdateTime = now;
+            
+            // Actualizar porcentajes
+            updateZoneTimePercentages();
+        }
+    }
+    
+    // Calcular y mostrar los porcentajes de tiempo en cada zona
+    private void updateZoneTimePercentages() {
+        if (!isMonitoringActive()) return;
+        
+        long totalTime = 0;
+        for (int i = 0; i < zoneTimes.length; i++) {
+            totalTime += zoneTimes[i];
+        }
+        
+        if (totalTime > 0) {
+            // Calcular porcentajes
+            int[] percentages = new int[zoneTimes.length];
+            for (int i = 0; i < zoneTimes.length; i++) {
+                percentages[i] = (int) ((zoneTimes[i] * 100) / totalTime);
+            }
+            
+            // Actualizar textos
+            if (zone1 != null) zone1.setText(String.format("Z1\n%d%%", percentages[1]));
+            if (zone2 != null) zone2.setText(String.format("Z2\n%d%%", percentages[2]));
+            if (zone3 != null) zone3.setText(String.format("Z3\n%d%%", percentages[3]));
+            if (zone4 != null) zone4.setText(String.format("Z4\n%d%%", percentages[4]));
+            if (zone5 != null) zone5.setText(String.format("Z5\n%d%%", percentages[5]));
+        }
+    }
+
     public void updateMonitoringTime() {
-        if (getActivity() != null && isMonitoringActive() /* && tvMonitoringTime != null */) {
+        if (getActivity() != null && isMonitoringActive() && tvMonitoringTime != null) {
             getActivity().runOnUiThread(() -> {
                 long currentTime = System.currentTimeMillis();
                 long elapsedTime = currentTime - monitoringStartTime;
                 
                 // Formatear el tiempo en HH:MM:SS
                 String timeString = formatElapsedTime(elapsedTime);
-                // Comentamos porque la vista no existe en el layout
-                // tvMonitoringTime.setText(timeString);
+                tvMonitoringTime.setText(timeString);
             });
         }
     }
@@ -310,10 +412,23 @@ public class MonitorFragment extends Fragment {
     
     public void startMonitoring() {
         monitoringStartTime = System.currentTimeMillis();
+        lastZoneUpdateTime = monitoringStartTime;
+        currentZone = 0;
+        
+        // Reiniciar tiempos de zona
+        for (int i = 0; i < zoneTimes.length; i++) {
+            zoneTimes[i] = 0;
+        }
+        
+        // Iniciar actualizaciones periódicas
+        startTimeUpdates();
+        
         updateMonitoringTime();
     }
     
     public void stopMonitoring() {
+        stopTimeUpdates();
         monitoringStartTime = 0;
+        lastZoneUpdateTime = 0;
     }
 }

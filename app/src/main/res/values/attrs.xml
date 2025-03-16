@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Atributos para HeartRateView -->
+    <declare-styleable name="HeartRateView">
+        <attr name="maxValue" format="integer" />
+        <attr name="minValue" format="integer" />
+        <attr name="backgroundArcColor" format="color" />
+        <attr name="progressArcColor" format="color" />
+        <attr name="valueTextColor" format="color" />
+    </declare-styleable>
+</resources> 

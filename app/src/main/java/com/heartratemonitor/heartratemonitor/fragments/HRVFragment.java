@@ -24,6 +24,7 @@ import java.text.SimpleDateFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.ArrayList;
+import java.util.Date;
 
 public class HRVFragment extends Fragment {
 
@@ -141,24 +142,32 @@ public class HRVFragment extends Fragment {
     }
 
     private void displaySessionData(WorkoutSession session, List<Integer> rrIntervals) {
-        // Convertir lista de enteros a double[] para el análisis
-        double[] rrData = new double[rrIntervals.size()];
-        for (int i = 0; i < rrIntervals.size(); i++) {
-            rrData[i] = rrIntervals.get(i);
-        }
+        // Utilizar los valores ya calculados de la sesión
+        double sdnn = session.getSdnn();
+        double rmssd = session.getRmssd();
+        double pnn50 = session.getPnn50();
+        double lfhfRatio = session.getLfhfRatio();
+        int hrvScore = session.getHrvScore();
         
-        // Calcular métricas de HRV
-        double sdnn = hrvAnalyzer.calculateSDNN(rrData);
-        double rmssd = hrvAnalyzer.calculateRMSSD(rrData);
-        double pnn50 = hrvAnalyzer.calculatePNN50(rrData);
-        double lf = hrvAnalyzer.calculateLF(rrData);
-        double hf = hrvAnalyzer.calculateHF(rrData);
-        double lfhfRatio = lf / hf;
-        int hrvScore = hrvAnalyzer.calculateHRVScore(rrData);
+        // Si los valores están vacíos (cero), intentamos calcularlos con los intervalos RR disponibles
+        if (sdnn == 0 && rrIntervals != null && !rrIntervals.isEmpty()) {
+            // Convertir lista de enteros a double[] para el análisis
+            double[] rrData = new double[rrIntervals.size()];
+            for (int i = 0; i < rrIntervals.size(); i++) {
+                rrData[i] = rrIntervals.get(i);
+            }
+            
+            // Calcular métricas de HRV
+            sdnn = hrvAnalyzer.calculateSDNN(rrData);
+            rmssd = hrvAnalyzer.calculateRMSSD(rrData);
+            pnn50 = hrvAnalyzer.calculatePNN50(rrData);
+            lfhfRatio = hrvAnalyzer.calculateLFHFRatio(rrData);
+            hrvScore = hrvAnalyzer.calculateHRVScore(rrData);
+        }
         
         // Formatear fecha
         SimpleDateFormat dateFormat = new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault());
-        String dateStr = dateFormat.format(session.getStartTime());
+        String dateStr = dateFormat.format(new Date(session.getStartTime()));
         
         // Actualizar vistas
         sessionTitleTextView.setText(session.getTitle());

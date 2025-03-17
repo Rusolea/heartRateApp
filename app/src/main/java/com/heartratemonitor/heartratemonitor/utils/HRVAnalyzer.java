@@ -236,6 +236,27 @@ public class HRVAnalyzer {
     }
     
     /**
+     * Calcula la relación entre la potencia de baja frecuencia y alta frecuencia (LF/HF)
+     * @param rrData Array de intervalos RR en milisegundos
+     * @return Relación LF/HF o 1.0 si no hay suficientes datos
+     */
+    public double calculateLFHFRatio(double[] rrData) {
+        if (rrData == null || rrData.length < 10) {
+            return 1.0; // Valor neutral por defecto
+        }
+        
+        double lf = calculateLF(rrData);
+        double hf = calculateHF(rrData);
+        
+        // Evitar división por cero
+        if (hf == 0) {
+            return 1.0;
+        }
+        
+        return lf / hf;
+    }
+    
+    /**
      * Obtiene una puntuación simple de HRV basada en el RMSSD
      * @return Puntuación de HRV (mayor = mejor) o 0 si no hay suficientes datos
      */

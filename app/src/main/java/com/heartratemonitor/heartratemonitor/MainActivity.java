@@ -2,6 +2,9 @@ package com.heartratemonitor.heartratemonitor;
 
 import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.IntentFilter;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
@@ -57,20 +60,31 @@ public class MainActivity extends AppCompatActivity implements
     private static final int REQUEST_ENABLE_BT = 1;
     private static final int REQUEST_OVERLAY_PERMISSION = 2;
     
+    // Estados de monitoreo
+    private static final int STATE_IDLE = 0;
+    private static final int STATE_MONITORING = 1;
+    private static final int STATE_PAUSED = 2;
+    
     private PermissionHandler permissionHandler;
     private BluetoothHandler bluetoothHandler;
     private DatabaseHelper dbHelper;
     
     private FloatingActionButton fab;
+    private FloatingActionButton fabStop;
     private MonitorFragment monitorFragment;
     
     private boolean isMonitoring = false;
+    private int monitoringState = STATE_IDLE;
     private long currentSessionId = -1;
     private ArrayList<Integer> rrIntervals = new ArrayList<>();
     private HRVAnalyzer hrvAnalyzer;
     
     // Variable para controlar el estado del servicio flotante
     private boolean isFloatingServiceRunning = false;
+
+    // BroadcastReceiver para capturar eventos del servicio
+    private BroadcastReceiver serviceReceiver;
+    private static final String ACTION_SERVICE_STOPPED = "com.heartratemonitor.heartratemonitor.SERVICE_STOPPED";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -83,14 +97,30 @@ public class MainActivity extends AppCompatActivity implements
             setSupportActionBar(toolbar);
         }
         
-        // Inicializar FAB
+        // Inicializar FABs
         fab = findViewById(R.id.fab);
+        fabStop = findViewById(R.id.fab_stop);
+        
         if (fab != null) {
             fab.setOnClickListener(view -> {
-                if (isMonitoring) {
+                switch (monitoringState) {
+                    case STATE_IDLE:
+                        startMonitoring();
+                        break;
+                    case STATE_MONITORING:
+                        pauseMonitoring();
+                        break;
+                    case STATE_PAUSED:
+                        resumeMonitoring();
+                        break;
+                }
+            });
+        }
+        
+        if (fabStop != null) {
+            fabStop.setOnClickListener(view -> {
+                if (monitoringState == STATE_MONITORING || monitoringState == STATE_PAUSED) {
                     stopMonitoring();
-                } else {
-                    startMonitoring();
                 }
             });
         }
@@ -128,8 +158,34 @@ public class MainActivity extends AppCompatActivity implements
         bluetoothHandler = new BluetoothHandler(this, this);
         dbHelper = new DatabaseHelper(this);
         
+        // Inicializar y registrar el BroadcastReceiver
+        setupServiceReceiver();
+        
         // Verificar permisos
         permissionHandler.checkPermissions();
+    }
+    
+    private void setupServiceReceiver() {
+        serviceReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (ACTION_SERVICE_STOPPED.equals(intent.getAction())) {
+                    // El servicio ha sido detenido desde la notificación
+                    // Si la medición estaba activa, finalizamos la sesión
+                    if (isMonitoring && currentSessionId != -1) {
+                        // Actualizar UI y finalizar sesión
+                        runOnUiThread(() -> {
+                            stopMonitoring();
+                        });
+                    }
+                }
+            }
+        };
+        
+        // Registrar el receptor
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(ACTION_SERVICE_STOPPED);
+        registerReceiver(serviceReceiver, filter);
     }
     
     @Override
@@ -186,6 +242,13 @@ public class MainActivity extends AppCompatActivity implements
         if (isMonitoring) {
             stopMonitoring();
         }
+        
+        // Deregistrar el BroadcastReceiver
+        if (serviceReceiver != null) {
+            unregisterReceiver(serviceReceiver);
+            serviceReceiver = null;
+        }
+        
         bluetoothHandler.close();
     }
     
@@ -428,11 +491,22 @@ public class MainActivity extends AppCompatActivity implements
     }
     
     private void navigateToFragment(Fragment fragment, String tag) {
-        // Ocultar FAB si no estamos en la pantalla de monitoreo
+        // Ocultar FABs si no estamos en la pantalla de monitoreo
         if (!"monitor".equals(tag)) {
             fab.hide();
+            if (fabStop != null) {
+                fabStop.hide();
+            }
         } else {
             fab.show();
+            // Solo mostrar el botón de detener si estamos monitoreando
+            if (fabStop != null) {
+                if (monitoringState == STATE_MONITORING || monitoringState == STATE_PAUSED) {
+                    fabStop.show();
+                } else {
+                    fabStop.hide();
+                }
+            }
         }
 
         FragmentManager fragmentManager = getSupportFragmentManager();
@@ -490,8 +564,14 @@ public class MainActivity extends AppCompatActivity implements
         rrIntervals.clear(); // Limpiar datos anteriores
         
         // Actualizar UI
-        updateFabIcon(true);
+        updateFabIcon(STATE_MONITORING);
+        monitoringState = STATE_MONITORING;
         isMonitoring = true;
+        
+        // Mostrar botón de detener
+        if (fabStop != null) {
+            fabStop.show();
+        }
         
         if (monitorFragment != null && monitorFragment.isAdded()) {
             monitorFragment.updateMonitoringState(true);
@@ -501,6 +581,38 @@ public class MainActivity extends AppCompatActivity implements
         Toast.makeText(this, R.string.measurement_in_progress, Toast.LENGTH_SHORT).show();
     }
     
+    private void pauseMonitoring() {
+        // Actualizar UI
+        updateFabIcon(STATE_PAUSED);
+        monitoringState = STATE_PAUSED;
+        
+        if (monitorFragment != null && monitorFragment.isAdded()) {
+            monitorFragment.pauseMonitoring();
+            monitorFragment.updateConnectionStatus(getString(R.string.measurement_paused));
+        }
+        
+        Toast.makeText(this, R.string.measurement_paused, Toast.LENGTH_SHORT).show();
+        
+        // Pausar servicio de monitoreo
+        pauseHeartRateService();
+    }
+    
+    private void resumeMonitoring() {
+        // Actualizar UI
+        updateFabIcon(STATE_MONITORING);
+        monitoringState = STATE_MONITORING;
+        
+        if (monitorFragment != null && monitorFragment.isAdded()) {
+            monitorFragment.resumeMonitoring();
+            monitorFragment.updateConnectionStatus(getString(R.string.measuring));
+        }
+        
+        Toast.makeText(this, R.string.measurement_in_progress, Toast.LENGTH_SHORT).show();
+        
+        // Reanudar servicio de monitoreo
+        resumeHeartRateService();
+    }
+    
     private void stopMonitoring() {
         // Finalizar la sesión en la base de datos
         if (currentSessionId != -1) {
@@ -508,11 +620,17 @@ public class MainActivity extends AppCompatActivity implements
         }
         
         // Actualizar UI
-        updateFabIcon(false);
+        updateFabIcon(STATE_IDLE);
+        monitoringState = STATE_IDLE;
         isMonitoring = false;
         
+        // Ocultar botón de detener
+        if (fabStop != null) {
+            fabStop.hide();
+        }
+        
         if (monitorFragment != null && monitorFragment.isAdded()) {
-            monitorFragment.updateMonitoringState(false);
+            monitorFragment.stopMonitoring();
             monitorFragment.updateConnectionStatus(getString(R.string.measurement_stopped));
         }
         
@@ -535,8 +653,14 @@ public class MainActivity extends AppCompatActivity implements
             rrIntervals.clear(); // Limpiar datos anteriores
             
             // Actualizar UI
-            updateFabIcon(true);
+            updateFabIcon(STATE_MONITORING);
+            monitoringState = STATE_MONITORING;
             isMonitoring = true;
+            
+            // Mostrar botón de detener
+            if (fabStop != null) {
+                fabStop.show();
+            }
             
             if (monitorFragment != null && monitorFragment.isAdded()) {
                 monitorFragment.updateMonitoringState(true);
@@ -547,13 +671,21 @@ public class MainActivity extends AppCompatActivity implements
         }
     }
     
-    private void updateFabIcon(boolean isMonitoring) {
-        if (isMonitoring) {
-            fab.setImageResource(R.drawable.ic_stop);
-            fab.setContentDescription(getString(R.string.fab_stop_monitoring));
-        } else {
-            fab.setImageResource(R.drawable.ic_play);
-            fab.setContentDescription(getString(R.string.fab_start_monitoring));
+    private void updateFabIcon(int state) {
+        switch (state) {
+            case STATE_MONITORING:
+                fab.setImageResource(R.drawable.ic_pause);
+                fab.setContentDescription(getString(R.string.fab_pause_monitoring));
+                break;
+            case STATE_PAUSED:
+                fab.setImageResource(R.drawable.ic_play);
+                fab.setContentDescription(getString(R.string.fab_resume_monitoring));
+                break;
+            case STATE_IDLE:
+            default:
+                fab.setImageResource(R.drawable.ic_play);
+                fab.setContentDescription(getString(R.string.fab_start_monitoring));
+                break;
         }
     }
     
@@ -579,6 +711,27 @@ public class MainActivity extends AppCompatActivity implements
         double calories = durationMinutes * 5; // Valor arbitrario para ejemplo
         session.setCaloriesBurned((int)calories);
         
+        // Calcular el promedio de la frecuencia cardíaca
+        List<HeartRateData> heartRateDataList = dbHelper.getHeartRateDataForSession(sessionId);
+        if (!heartRateDataList.isEmpty()) {
+            int totalHeartRate = 0;
+            int maxHeartRate = 0;
+            
+            for (HeartRateData data : heartRateDataList) {
+                int heartRate = data.getHeartRate();
+                totalHeartRate += heartRate;
+                
+                // Actualizar el máximo si es necesario
+                if (heartRate > maxHeartRate) {
+                    maxHeartRate = heartRate;
+                }
+            }
+            
+            int avgHeartRate = totalHeartRate / heartRateDataList.size();
+            session.setAverageHeartRate(avgHeartRate);
+            session.setMaxHeartRate(maxHeartRate);
+        }
+        
         // Guardar los datos de HRV
         hrvAnalyzer = new HRVAnalyzer();
         double[] rrData = new double[rrIntervals.size()];
@@ -589,6 +742,10 @@ public class MainActivity extends AppCompatActivity implements
         session.setSdnn(hrvAnalyzer.calculateSDNN(rrData));
         session.setRmssd(hrvAnalyzer.calculateRMSSD(rrData));
         session.setPnn50(hrvAnalyzer.calculatePNN50(rrData));
+        
+        // Calcular la relación LF/HF
+        double lfhfRatio = hrvAnalyzer.calculateLFHFRatio(rrData);
+        session.setLfhfRatio(lfhfRatio);
         
         // Calcular puntuación HRV
         int hrvScore = hrvAnalyzer.calculateHRVScore(rrData);
@@ -608,6 +765,10 @@ public class MainActivity extends AppCompatActivity implements
         if (getSupportFragmentManager().getBackStackEntryCount() > 0) {
             getSupportFragmentManager().popBackStack();
             fab.show(); // Mostrar FAB cuando volvemos al fragmento de monitoreo
+            // Solo mostrar el botón de detener si estamos monitoreando
+            if (fabStop != null && (monitoringState == STATE_MONITORING || monitoringState == STATE_PAUSED)) {
+                fabStop.show();
+            }
         } else {
             super.onBackPressed();
         }
@@ -783,6 +944,18 @@ public class MainActivity extends AppCompatActivity implements
         } else {
             startService(intent);
         }
+    }
+    
+    private void pauseHeartRateService() {
+        Intent intent = new Intent(this, HeartRateService.class);
+        intent.setAction("com.heartratemonitor.heartratemonitor.PAUSE_SERVICE");
+        startService(intent);
+    }
+    
+    private void resumeHeartRateService() {
+        Intent intent = new Intent(this, HeartRateService.class);
+        intent.setAction("com.heartratemonitor.heartratemonitor.RESUME_SERVICE");
+        startService(intent);
     }
     
     private void stopHeartRateService() {

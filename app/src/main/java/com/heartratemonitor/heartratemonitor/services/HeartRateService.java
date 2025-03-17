@@ -38,7 +38,15 @@ public class HeartRateService extends Service {
     private static final int NOTIFICATION_ID = 101;
     private static final String CHANNEL_ID = "heart_rate_channel";
     private static final String ACTION_STOP_SERVICE = "com.heartratemonitor.heartratemonitor.STOP_SERVICE";
+    private static final String ACTION_PAUSE_SERVICE = "com.heartratemonitor.heartratemonitor.PAUSE_SERVICE";
+    private static final String ACTION_RESUME_SERVICE = "com.heartratemonitor.heartratemonitor.RESUME_SERVICE";
     private static final String ACTION_UPDATE_HEART_RATE = "com.heartratemonitor.heartratemonitor.UPDATE_HEART_RATE";
+    private static final String ACTION_SERVICE_STOPPED = "com.heartratemonitor.heartratemonitor.SERVICE_STOPPED";
+    
+    // Estados del servicio
+    private static final int STATE_IDLE = 0;
+    private static final int STATE_MONITORING = 1;
+    private static final int STATE_PAUSED = 2;
     
     // Valores para las zonas de frecuencia cardíaca
     private List<Integer> zones;
@@ -53,6 +61,7 @@ public class HeartRateService extends Service {
     
     private NotificationManager notificationManager;
     private boolean isMonitoring = false;
+    private int serviceState = STATE_IDLE;
     private Handler handler = new Handler(Looper.getMainLooper());
     
     // Clase Binder para clientes del servicio
@@ -85,21 +94,34 @@ public class HeartRateService extends Service {
     
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && ACTION_STOP_SERVICE.equals(intent.getAction())) {
-            stopHeartRateMonitoring();
-            stopForeground(true);
-            stopSelf();
-            return START_NOT_STICKY;
-        }
-        
-        // Si hay una dirección de dispositivo, conectarse
-        if (intent != null && intent.hasExtra("deviceAddress")) {
-            deviceAddress = intent.getStringExtra("deviceAddress");
-            maxHeartRate = intent.getIntExtra("maxHeartRate", 220);
+        if (intent != null) {
+            String action = intent.getAction();
+            if (ACTION_STOP_SERVICE.equals(action)) {
+                stopHeartRateMonitoring();
+                // Enviar broadcast para notificar a la actividad
+                Intent broadcastIntent = new Intent(ACTION_SERVICE_STOPPED);
+                sendBroadcast(broadcastIntent);
+                stopForeground(true);
+                stopSelf();
+                return START_NOT_STICKY;
+            } else if (ACTION_PAUSE_SERVICE.equals(action)) {
+                pauseHeartRateMonitoring();
+                return START_STICKY;
+            } else if (ACTION_RESUME_SERVICE.equals(action)) {
+                resumeHeartRateMonitoring();
+                return START_STICKY;
+            }
             
-            startForeground(NOTIFICATION_ID, createNotification("Conectando...", 0, ""));
-            connectToDevice(deviceAddress);
-            isMonitoring = true;
+            // Si hay una dirección de dispositivo, conectarse
+            if (intent.hasExtra("deviceAddress")) {
+                deviceAddress = intent.getStringExtra("deviceAddress");
+                maxHeartRate = intent.getIntExtra("maxHeartRate", 220);
+                
+                startForeground(NOTIFICATION_ID, createNotification("Conectando...", 0, ""));
+                connectToDevice(deviceAddress);
+                isMonitoring = true;
+                serviceState = STATE_MONITORING;
+            }
         }
         
         return START_STICKY;
@@ -132,25 +154,51 @@ public class HeartRateService extends Service {
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent,
                 PendingIntent.FLAG_IMMUTABLE);
         
-        Intent stopIntent = new Intent(this, HeartRateService.class);
-        stopIntent.setAction(ACTION_STOP_SERVICE);
-        PendingIntent stopPendingIntent = PendingIntent.getService(this, 0, stopIntent,
-                PendingIntent.FLAG_IMMUTABLE);
-        
-        // Construir la notificación
-        String contentText = heartRate > 0 
-                ? "BPM: " + heartRate + (zone.isEmpty() ? "" : " | Zona: " + zone)
-                : "Esperando datos de frecuencia cardíaca...";
-        
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(title)
-                .setContentText(contentText)
                 .setSmallIcon(R.drawable.ic_heart)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setContentIntent(pendingIntent)
                 .setOnlyAlertOnce(true)
-                .setOngoing(true)
-                .addAction(R.drawable.ic_delete, "Detener", stopPendingIntent);
+                .setOngoing(true);
+                
+        // Construir el texto de la notificación
+        String contentText = heartRate > 0 
+                ? "BPM: " + heartRate + (zone.isEmpty() ? "" : " | Zona: " + zone)
+                : "Esperando datos de frecuencia cardíaca...";
+        
+        builder.setContentText(contentText);
+        
+        // Agregar acciones según el estado
+        if (serviceState == STATE_MONITORING) {
+            // Acción de pausar
+            Intent pauseIntent = new Intent(this, HeartRateService.class);
+            pauseIntent.setAction(ACTION_PAUSE_SERVICE);
+            PendingIntent pausePendingIntent = PendingIntent.getService(this, 1, pauseIntent,
+                    PendingIntent.FLAG_IMMUTABLE);
+            builder.addAction(R.drawable.ic_pause, getString(R.string.pause_service), pausePendingIntent);
+            
+            // Acción de detener
+            Intent stopIntent = new Intent(this, HeartRateService.class);
+            stopIntent.setAction(ACTION_STOP_SERVICE);
+            PendingIntent stopPendingIntent = PendingIntent.getService(this, 2, stopIntent,
+                    PendingIntent.FLAG_IMMUTABLE);
+            builder.addAction(R.drawable.ic_stop, getString(R.string.stop_service), stopPendingIntent);
+        } else if (serviceState == STATE_PAUSED) {
+            // Acción de reanudar
+            Intent resumeIntent = new Intent(this, HeartRateService.class);
+            resumeIntent.setAction(ACTION_RESUME_SERVICE);
+            PendingIntent resumePendingIntent = PendingIntent.getService(this, 3, resumeIntent,
+                    PendingIntent.FLAG_IMMUTABLE);
+            builder.addAction(R.drawable.ic_play, getString(R.string.resume_service), resumePendingIntent);
+            
+            // Acción de detener
+            Intent stopIntent = new Intent(this, HeartRateService.class);
+            stopIntent.setAction(ACTION_STOP_SERVICE);
+            PendingIntent stopPendingIntent = PendingIntent.getService(this, 2, stopIntent,
+                    PendingIntent.FLAG_IMMUTABLE);
+            builder.addAction(R.drawable.ic_stop, getString(R.string.stop_service), stopPendingIntent);
+        }
         
         return builder.build();
     }
@@ -297,16 +345,36 @@ public class HeartRateService extends Service {
         }
     }
     
+    public void pauseHeartRateMonitoring() {
+        serviceState = STATE_PAUSED;
+        updateNotification(getString(R.string.measurement_paused), currentHeartRate, currentZone);
+    }
+    
+    public void resumeHeartRateMonitoring() {
+        serviceState = STATE_MONITORING;
+        updateNotification(getString(R.string.service_notification_monitoring), currentHeartRate, currentZone);
+    }
+    
     public void stopHeartRateMonitoring() {
         if (bluetoothGatt != null) {
             bluetoothGatt.close();
             bluetoothGatt = null;
         }
+        serviceState = STATE_IDLE;
         isMonitoring = false;
+        
+        // Enviar broadcast para notificar a la actividad si la detención es manual
+        // y no por la destrucción del servicio
+        Intent broadcastIntent = new Intent(ACTION_SERVICE_STOPPED);
+        sendBroadcast(broadcastIntent);
     }
     
     public boolean isMonitoring() {
         return isMonitoring;
+    }
+    
+    public int getServiceState() {
+        return serviceState;
     }
     
     public void setMaxHeartRate(int maxHeartRate) {

@@ -29,6 +29,11 @@ public class MonitorFragment extends Fragment {
         void onConnectionStatusChanged(String status);
     }
     
+    // Estados de monitoreo
+    private static final int STATE_IDLE = 0;
+    private static final int STATE_MONITORING = 1;
+    private static final int STATE_PAUSED = 2;
+    
     private MonitorFragmentListener listener;
     private TextView tvConnectionStatus;
     private TextView tvHeartRate;
@@ -46,7 +51,10 @@ public class MonitorFragment extends Fragment {
     
     private List<Integer> zones;
     private long monitoringStartTime;
+    private long totalMonitoringTime = 0;
+    private long pauseStartTime = 0;
     private boolean isMonitoring = false;
+    private int monitoringState = STATE_IDLE;
     
     // Variables para el seguimiento del tiempo en zonas
     private long[] zoneTimes = new long[6]; // 0-5 zonas (0 es fuera de zona)
@@ -438,12 +446,15 @@ public class MonitorFragment extends Fragment {
     public void updateMonitoringTime() {
         if (getActivity() != null && isMonitoringActive() && tvMonitoringTime != null) {
             getActivity().runOnUiThread(() -> {
-                long currentTime = System.currentTimeMillis();
-                long elapsedTime = currentTime - monitoringStartTime;
+                long elapsedTime = 0;
                 
-                // Formatear el tiempo en HH:MM:SS
-                String timeString = formatElapsedTime(elapsedTime);
-                tvMonitoringTime.setText(timeString);
+                if (monitoringState == STATE_MONITORING && monitoringStartTime > 0) {
+                    elapsedTime = totalMonitoringTime + (System.currentTimeMillis() - monitoringStartTime);
+                } else if (monitoringState == STATE_PAUSED) {
+                    elapsedTime = totalMonitoringTime;
+                }
+                
+                tvMonitoringTime.setText(formatElapsedTime(elapsedTime));
             });
         }
     }
@@ -460,6 +471,9 @@ public class MonitorFragment extends Fragment {
         monitoringStartTime = System.currentTimeMillis();
         lastZoneUpdateTime = monitoringStartTime;
         currentZone = 0;
+        totalMonitoringTime = 0;
+        pauseStartTime = 0;
+        monitoringState = STATE_MONITORING;
         
         // Reiniciar tiempos de zona
         for (int i = 0; i < zoneTimes.length; i++) {
@@ -475,6 +489,37 @@ public class MonitorFragment extends Fragment {
     public void stopMonitoring() {
         stopTimeUpdates();
         monitoringStartTime = 0;
+        pauseStartTime = 0;
         lastZoneUpdateTime = 0;
+        totalMonitoringTime = 0;
+        monitoringState = STATE_IDLE;
+    }
+    
+    // Método para pausar el monitoreo
+    public void pauseMonitoring() {
+        if (monitoringState == STATE_MONITORING) {
+            pauseStartTime = System.currentTimeMillis();
+            monitoringState = STATE_PAUSED;
+            
+            // Detener actualizaciones periódicas mientras está pausado
+            stopTimeUpdates();
+            
+            // Guardar el tiempo acumulado hasta este momento
+            if (monitoringStartTime > 0) {
+                totalMonitoringTime += (pauseStartTime - monitoringStartTime);
+            }
+        }
+    }
+    
+    // Método para reanudar el monitoreo
+    public void resumeMonitoring() {
+        if (monitoringState == STATE_PAUSED) {
+            monitoringStartTime = System.currentTimeMillis();
+            lastZoneUpdateTime = monitoringStartTime;
+            monitoringState = STATE_MONITORING;
+            
+            // Reanudar actualizaciones periódicas
+            startTimeUpdates();
+        }
     }
 }

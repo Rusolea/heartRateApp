@@ -164,5 +164,11 @@
     <string name="measuring">Midiendo...</string>
     <string name="measurement_stopped">Medición detenida</string>
     <string name="device_disconnected_message">Dispositivo desconectado</string>
+    <string name="fab_pause_monitoring">Pausar medición</string>
+    <string name="fab_resume_monitoring">Reanudar medición</string>
+    <string name="measurement_paused">Medición pausada</string>
+    <string name="stop_service">Detener</string>
+    <string name="pause_service">Pausar</string>
+    <string name="resume_service">Reanudar</string>
 </resources>
 

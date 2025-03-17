@@ -170,5 +170,7 @@
     <string name="stop_service">Detener</string>
     <string name="pause_service">Pausar</string>
     <string name="resume_service">Reanudar</string>
+    <string name="not_available">N/A</string>
+    <string name="insufficient_data_for_analysis">Datos insuficientes para realizar el análisis</string>
 </resources>
 
